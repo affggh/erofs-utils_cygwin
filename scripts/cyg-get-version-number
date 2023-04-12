@@ -4,10 +4,10 @@
 cyg_version() {
     # just simple version + date + modifier
     modifier="affggh"
-    os="uname -o"
+    os="$(uname -o)"
     local_date=$(date +%y%m%d)
 
-    printf "%s-%s-%s" "$modifier" "$os" "$local_Date"
+    printf "%s%s-%s-%d" '-' "$modifier" "$os" "$local_date"
 }
 
 echo $(sed -n '1p' VERSION | tr -d '\n')$(cyg_version)
