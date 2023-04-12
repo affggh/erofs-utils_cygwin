@@ -1,0 +1,3 @@
+[submodule "libbase"]
+	path = libbase
+	url = https://android.googlesource.com/platform/system/libbase
