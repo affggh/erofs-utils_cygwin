@@ -13,6 +13,7 @@
 #include "erofs/print.h"
 #include "erofs/io.h"
 #include "erofs/dir.h"
+#include "erofs/inode.h"
 
 struct erofsfuse_dir_context {
 	struct erofs_dir_context ctx;
@@ -24,11 +25,13 @@ struct erofsfuse_dir_context {
 static int erofsfuse_fill_dentries(struct erofs_dir_context *ctx)
 {
 	struct erofsfuse_dir_context *fusectx = (void *)ctx;
+	struct stat st = {0};
 	char dname[EROFS_NAME_LEN + 1];
 
 	strncpy(dname, ctx->dname, ctx->de_namelen);
 	dname[ctx->de_namelen] = '\0';
-	fusectx->filler(fusectx->buf, dname, NULL, 0);
+	st.st_mode = erofs_ftype_to_dtype(ctx->de_ftype) << 12;
+	fusectx->filler(fusectx->buf, dname, &st, 0);
 	return 0;
 }
 
@@ -92,7 +95,7 @@ static int erofsfuse_getattr(const char *path, struct stat *stbuf)
 	stbuf->st_mode  = vi.i_mode;
 	stbuf->st_nlink = vi.i_nlink;
 	stbuf->st_size  = vi.i_size;
-	stbuf->st_blocks = roundup(vi.i_size, EROFS_BLKSIZ) >> 9;
+	stbuf->st_blocks = roundup(vi.i_size, erofs_blksiz()) >> 9;
 	stbuf->st_uid = vi.i_uid;
 	stbuf->st_gid = vi.i_gid;
 	if (S_ISBLK(vi.i_mode) || S_ISCHR(vi.i_mode))
@@ -139,7 +142,43 @@ static int erofsfuse_readlink(const char *path, char *buffer, size_t size)
 	return 0;
 }
 
+static int erofsfuse_getxattr(const char *path, const char *name, char *value,
+			size_t size
+#ifdef __APPLE__
+			, uint32_t position)
+#else
+			)
+#endif
+{
+	int ret;
+	struct erofs_inode vi;
+
+	erofs_dbg("getxattr(%s): name=%s size=%llu", path, name, size);
+
+	ret = erofs_ilookup(path, &vi);
+	if (ret)
+		return ret;
+
+	return erofs_getxattr(&vi, name, value, size);
+}
+
+static int erofsfuse_listxattr(const char *path, char *list, size_t size)
+{
+	int ret;
+	struct erofs_inode vi;
+
+	erofs_dbg("listxattr(%s): size=%llu", path, size);
+
+	ret = erofs_ilookup(path, &vi);
+	if (ret)
+		return ret;
+
+	return erofs_listxattr(&vi, list, size);
+}
+
 static struct fuse_operations erofs_ops = {
+	.getxattr = erofsfuse_getxattr,
+	.listxattr = erofsfuse_listxattr,
 	.readlink = erofsfuse_readlink,
 	.getattr = erofsfuse_getattr,
 	.readdir = erofsfuse_readdir,
@@ -151,6 +190,7 @@ static struct fuse_operations erofs_ops = {
 static struct options {
 	const char *disk;
 	const char *mountpoint;
+	u64 offset;
 	unsigned int debug_lvl;
 	bool show_help;
 	bool odebug;
@@ -158,6 +198,7 @@ static struct options {
 
 #define OPTION(t, p) { t, offsetof(struct options, p), 1 }
 static const struct fuse_opt option_spec[] = {
+	OPTION("--offset=%lu", offset),
 	OPTION("--dbglevel=%u", debug_lvl),
 	OPTION("--help", show_help),
 	FUSE_OPT_KEY("--device=", 1),
@@ -170,6 +211,7 @@ static void usage(void)
 
 	fputs("usage: [options] IMAGE MOUNTPOINT\n\n"
 	      "Options:\n"
+	      "    --offset=#             skip # bytes when reading IMAGE\n"
 	      "    --dbglevel=#           set output message level to # (maximum 9)\n"
 	      "    --device=#             specify an extra device to be used together\n"
 #if FUSE_MAJOR_VERSION < 3
@@ -190,6 +232,7 @@ static void usage(void)
 static void erofsfuse_dumpcfg(void)
 {
 	erofs_dump("disk: %s\n", fusecfg.disk);
+	erofs_dump("offset: %llu\n", fusecfg.offset | 0ULL);
 	erofs_dump("mountpoint: %s\n", fusecfg.mountpoint);
 	erofs_dump("dbglevel: %u\n", cfg.c_dbg_lvl);
 }
@@ -279,6 +322,8 @@ int main(int argc, char *argv[])
 	if (fusecfg.odebug && cfg.c_dbg_lvl < EROFS_DBG)
 		cfg.c_dbg_lvl = EROFS_DBG;
 
+	cfg.c_offset = fusecfg.offset;
+
 	erofsfuse_dumpcfg();
 	ret = dev_open_ro(fusecfg.disk);
 	if (ret) {
@@ -293,6 +338,8 @@ int main(int argc, char *argv[])
 	}
 
 	ret = fuse_main(args.argc, args.argv, &erofs_ops, NULL);
+
+	erofs_put_super();
 err_dev_close:
 	blob_closeall();
 	dev_close();

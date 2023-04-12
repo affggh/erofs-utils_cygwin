@@ -134,6 +134,7 @@ AC_CHECK_HEADERS(m4_flatten([
 	stdlib.h
 	string.h
 	sys/ioctl.h
+	sys/mman.h
 	sys/stat.h
 	sys/sysmacros.h
 	sys/time.h
@@ -190,6 +191,8 @@ AC_CHECK_FUNCS(m4_flatten([
 	llistxattr
 	memset
 	realpath
+	lseek64
+	ftello64
 	pread64
 	pwrite64
 	strdup
@@ -318,6 +321,9 @@ if test "x$enable_lzma" = "xyes"; then
   fi
   CPPFLAGS="${saved_CPPFLAGS}"
 fi
+
+# Enable 64-bit off_t
+CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
 # Set up needed symbols, conditionals and compiler/linker flags
 AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])

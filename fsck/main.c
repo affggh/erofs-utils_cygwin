@@ -259,7 +259,7 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 static int erofs_check_sb_chksum(void)
 {
 	int ret;
-	u8 buf[EROFS_BLKSIZ];
+	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
 	struct erofs_super_block *sb;
 
@@ -273,7 +273,7 @@ static int erofs_check_sb_chksum(void)
 	sb = (struct erofs_super_block *)(buf + EROFS_SUPER_OFFSET);
 	sb->checksum = 0;
 
-	crc = erofs_crc32c(~0, (u8 *)sb, EROFS_BLKSIZ - EROFS_SUPER_OFFSET);
+	crc = erofs_crc32c(~0, (u8 *)sb, erofs_blksiz() - EROFS_SUPER_OFFSET);
 	if (crc != sbi.checksum) {
 		erofs_err("superblock chksum doesn't match: saved(%08xh) calculated(%08xh)",
 			  sbi.checksum, crc);
@@ -292,7 +292,7 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	struct erofs_xattr_ibody_header *ih;
 	struct erofs_xattr_entry *entry;
 	int i, remaining = inode->xattr_isize, ret = 0;
-	char buf[EROFS_BLKSIZ];
+	char buf[EROFS_MAX_BLOCK_SIZE];
 
 	if (inode->xattr_isize == xattr_hdr_size) {
 		erofs_err("xattr_isize %d of nid %llu is not supported yet",
@@ -322,8 +322,8 @@ static int erofs_verify_xattr(struct erofs_inode *inode)
 	addr += xattr_hdr_size;
 	remaining -= xattr_hdr_size;
 	for (i = 0; i < xattr_shared_count; ++i) {
-		if (ofs >= EROFS_BLKSIZ) {
-			if (ofs != EROFS_BLKSIZ) {
+		if (ofs >= erofs_blksiz()) {
+			if (ofs != erofs_blksiz()) {
 				erofs_err("unaligned xattr entry in xattr shared area @ nid %llu",
 					  inode->nid | 0ULL);
 				ret = -EFSCORRUPTED;
@@ -366,7 +366,6 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	struct erofs_map_blocks map = {
 		.index = UINT_MAX,
 	};
-	struct erofs_map_dev mdev;
 	int ret = 0;
 	bool compressed;
 	erofs_off_t pos = 0;
@@ -427,51 +426,19 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 			BUG_ON(!raw);
 		}
 
-		mdev = (struct erofs_map_dev) {
-			.m_deviceid = map.m_deviceid,
-			.m_pa = map.m_pa,
-		};
-		ret = erofs_map_dev(&sbi, &mdev);
-		if (ret) {
-			erofs_err("failed to map device of m_pa %" PRIu64 ", m_deviceid %u @ nid %llu: %d",
-				  map.m_pa, map.m_deviceid, inode->nid | 0ULL,
-				  ret);
-			goto out;
-		}
-
-		if (compressed && map.m_llen > buffer_size) {
-			buffer_size = map.m_llen;
-			buffer = realloc(buffer, buffer_size);
-			BUG_ON(!buffer);
-		}
-
-		ret = dev_read(mdev.m_deviceid, raw, mdev.m_pa, map.m_plen);
-		if (ret < 0) {
-			erofs_err("failed to read data of m_pa %" PRIu64 ", m_plen %" PRIu64 " @ nid %llu: %d",
-				  mdev.m_pa, map.m_plen, inode->nid | 0ULL,
-				  ret);
-			goto out;
-		}
-
 		if (compressed) {
-			struct z_erofs_decompress_req rq = {
-				.in = raw,
-				.out = buffer,
-				.decodedskip = 0,
-				.inputsize = map.m_plen,
-				.decodedlength = map.m_llen,
-				.alg = map.m_algorithmformat,
-				.partial_decoding = 0
-			};
-
-			ret = z_erofs_decompress(&rq);
-			if (ret < 0) {
-				erofs_err("failed to decompress data of m_pa %" PRIu64 ", m_plen %" PRIu64 " @ nid %llu: %s",
-					  mdev.m_pa, map.m_plen,
-					  inode->nid | 0ULL, strerror(-ret));
-				goto out;
+			if (map.m_llen > buffer_size) {
+				buffer_size = map.m_llen;
+				buffer = realloc(buffer, buffer_size);
+				BUG_ON(!buffer);
 			}
+			ret = z_erofs_read_one_data(inode, &map, raw, buffer,
+						    0, map.m_llen, false);
+		} else {
+			ret = erofs_read_one_data(&map, raw, 0, map.m_plen);
 		}
+		if (ret)
+			goto out;
 
 		if (outfd >= 0 && write(outfd, compressed ? buffer : raw,
 					map.m_llen) < 0) {
@@ -483,10 +450,9 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	}
 
 	if (fsckcfg.print_comp_ratio) {
-		fsckcfg.logical_blocks +=
-			DIV_ROUND_UP(inode->i_size, EROFS_BLKSIZ);
-		fsckcfg.physical_blocks +=
-			DIV_ROUND_UP(pchunk_len, EROFS_BLKSIZ);
+		if (!erofs_is_packed_inode(inode))
+			fsckcfg.logical_blocks += BLK_ROUND_UP(inode->i_size);
+		fsckcfg.physical_blocks += BLK_ROUND_UP(pchunk_len);
 	}
 out:
 	if (raw)
@@ -731,6 +697,8 @@ static int erofsfsck_check_inode(erofs_nid_t pnid, erofs_nid_t nid)
 			ret = erofs_extract_dir(&inode);
 			break;
 		case S_IFREG:
+			if (erofs_is_packed_inode(&inode))
+				goto verify;
 			ret = erofs_extract_file(&inode);
 			break;
 		case S_IFLNK:
@@ -766,7 +734,7 @@ verify:
 		ret = erofs_iterate_dir(&ctx, true);
 	}
 
-	if (!ret)
+	if (!ret && !erofs_is_packed_inode(&inode))
 		erofsfsck_set_attributes(&inode, fsckcfg.extract_path);
 
 	if (ret == -ECANCELED)
@@ -818,7 +786,15 @@ int main(int argc, char **argv)
 
 	if (erofs_sb_has_sb_chksum() && erofs_check_sb_chksum()) {
 		erofs_err("failed to verify superblock checksum");
-		goto exit_dev_close;
+		goto exit_put_super;
+	}
+
+	if (erofs_sb_has_fragments()) {
+		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
+		if (err) {
+			erofs_err("failed to verify packed file");
+			goto exit_put_super;
+		}
 	}
 
 	err = erofsfsck_check_inode(sbi.root_nid, sbi.root_nid);
@@ -843,6 +819,8 @@ int main(int argc, char **argv)
 		}
 	}
 
+exit_put_super:
+	erofs_put_super();
 exit_dev_close:
 	dev_close();
 exit:

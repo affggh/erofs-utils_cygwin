@@ -10,15 +10,13 @@
 #include "erofs/block_list.h"
 #include "erofs/cache.h"
 #include "erofs/io.h"
+#include "sha256.h"
 #include <unistd.h>
-
-void erofs_sha256(const unsigned char *in, unsigned long in_size,
-		  unsigned char out[32]);
 
 struct erofs_blobchunk {
 	struct hashmap_entry ent;
 	char		sha256[32];
-	unsigned int	chunksize;
+	erofs_off_t	chunksize;
 	erofs_blk_t	blkaddr;
 };
 
@@ -27,11 +25,14 @@ static FILE *blobfile;
 static erofs_blk_t remapped_base;
 static bool multidev;
 static struct erofs_buffer_head *bh_devt;
+struct erofs_blobchunk erofs_holechunk = {
+	.blkaddr = EROFS_NULL_ADDR,
+};
 
 static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
-		unsigned int chunksize)
+		erofs_off_t chunksize)
 {
-	static u8 zeroed[EROFS_BLKSIZ];
+	static u8 zeroed[EROFS_MAX_BLOCK_SIZE];
 	u8 *chunkdata, sha256[32];
 	int ret;
 	unsigned int hash;
@@ -71,7 +72,7 @@ static struct erofs_blobchunk *erofs_blob_getchunk(int fd,
 	erofs_dbg("Writing chunk (%u bytes) to %u", chunksize, chunk->blkaddr);
 	ret = fwrite(chunkdata, chunksize, 1, blobfile);
 	if (ret == 1 && erofs_blkoff(chunksize))
-		ret = fwrite(zeroed, EROFS_BLKSIZ - erofs_blkoff(chunksize),
+		ret = fwrite(zeroed, erofs_blksiz() - erofs_blkoff(chunksize),
 			     1, blobfile);
 	if (ret < 1) {
 		struct hashmap_entry key;
@@ -129,7 +130,11 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 
 		chunk = *(void **)(inode->chunkindexes + src);
 
-		idx.blkaddr = base_blkaddr + chunk->blkaddr;
+		if (chunk->blkaddr != EROFS_NULL_ADDR)
+			idx.blkaddr = base_blkaddr + chunk->blkaddr;
+		else
+			idx.blkaddr = EROFS_NULL_ADDR;
+
 		if (extent_start != EROFS_NULL_ADDR &&
 		    idx.blkaddr == extent_end + 1) {
 			extent_end = idx.blkaddr;
@@ -163,14 +168,28 @@ int erofs_blob_write_chunk_indexes(struct erofs_inode *inode,
 
 int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 {
-	unsigned int chunksize = 1 << cfg.c_chunkbits;
-	unsigned int count = DIV_ROUND_UP(inode->i_size, chunksize);
+	unsigned int chunkbits = cfg.c_chunkbits;
+	unsigned int count, unit;
 	struct erofs_inode_chunk_index *idx;
-	erofs_off_t pos, len;
-	unsigned int unit;
+	erofs_off_t pos, len, chunksize;
 	int fd, ret;
 
-	inode->u.chunkformat |= inode->u.chunkbits - LOG_BLOCK_SIZE;
+	fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
+	if (fd < 0)
+		return -errno;
+#ifdef SEEK_DATA
+	/* if the file is fully sparsed, use one big chunk instead */
+	if (lseek(fd, 0, SEEK_DATA) < 0 && errno == ENXIO) {
+		chunkbits = ilog2(inode->i_size - 1) + 1;
+		if (chunkbits < sbi.blkszbits)
+			chunkbits = sbi.blkszbits;
+	}
+#endif
+	if (chunkbits - sbi.blkszbits > EROFS_CHUNK_FORMAT_BLKBITS_MASK)
+		chunkbits = EROFS_CHUNK_FORMAT_BLKBITS_MASK + sbi.blkszbits;
+	chunksize = 1ULL << chunkbits;
+	count = DIV_ROUND_UP(inode->i_size, chunksize);
+	inode->u.chunkformat |= chunkbits - sbi.blkszbits;
 	if (multidev)
 		inode->u.chunkformat |= EROFS_CHUNK_FORMAT_INDEXES;
 
@@ -181,24 +200,41 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 
 	inode->extent_isize = count * unit;
 	idx = malloc(count * max(sizeof(*idx), sizeof(void *)));
-	if (!idx)
+	if (!idx) {
+		close(fd);
 		return -ENOMEM;
-	inode->chunkindexes = idx;
-
-	fd = open(inode->i_srcpath, O_RDONLY | O_BINARY);
-	if (fd < 0) {
-		ret = -errno;
-		goto err;
 	}
+	inode->chunkindexes = idx;
 
 	for (pos = 0; pos < inode->i_size; pos += len) {
 		struct erofs_blobchunk *chunk;
+#ifdef SEEK_DATA
+		off_t offset = lseek(fd, pos, SEEK_DATA);
+
+		if (offset < 0) {
+			if (errno != ENXIO)
+				offset = pos;
+			else
+				offset = ((pos >> chunkbits) + 1) << chunkbits;
+		} else {
+			offset &= ~(chunksize - 1);
+		}
+
+		if (offset > pos) {
+			len = 0;
+			do {
+				*(void **)idx++ = &erofs_holechunk;
+				pos += chunksize;
+			} while (pos < offset);
+			DBG_BUGON(pos != offset);
+			continue;
+		}
+#endif
 
 		len = min_t(u64, inode->i_size - pos, chunksize);
 		chunk = erofs_blob_getchunk(fd, len);
 		if (IS_ERR(chunk)) {
 			ret = PTR_ERR(chunk);
-			close(fd);
 			goto err;
 		}
 		*(void **)idx++ = chunk;
@@ -207,6 +243,7 @@ int erofs_blob_write_chunked_file(struct erofs_inode *inode)
 	close(fd);
 	return 0;
 err:
+	close(fd);
 	free(inode->chunkindexes);
 	inode->chunkindexes = NULL;
 	return ret;
@@ -237,6 +274,8 @@ int erofs_blob_remap(void)
 		erofs_bdrop(bh_devt, false);
 		return 0;
 	}
+	if (!length)	/* bail out if there is no chunked data */
+		return 0;
 	bh = erofs_balloc(DATA, length, 0, 0);
 	if (IS_ERR(bh))
 		return PTR_ERR(bh);

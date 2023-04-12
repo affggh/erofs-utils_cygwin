@@ -82,7 +82,7 @@ int dev_open(const char *dev)
 			close(fd);
 			return ret;
 		}
-		erofs_devsz = round_down(erofs_devsz, EROFS_BLKSIZ);
+		erofs_devsz = round_down(erofs_devsz, erofs_blksiz());
 		break;
 	case S_IFREG:
 		ret = ftruncate(fd, 0);
@@ -192,7 +192,7 @@ int dev_write(const void *buf, u64 offset, size_t len)
 
 int dev_fillzero(u64 offset, size_t len, bool padding)
 {
-	static const char zero[EROFS_BLKSIZ] = {0};
+	static const char zero[EROFS_MAX_BLOCK_SIZE] = {0};
 	int ret;
 
 	if (cfg.c_dry_run)
@@ -203,12 +203,12 @@ int dev_fillzero(u64 offset, size_t len, bool padding)
 				  FALLOC_FL_KEEP_SIZE, offset, len) >= 0)
 		return 0;
 #endif
-	while (len > EROFS_BLKSIZ) {
-		ret = dev_write(zero, offset, EROFS_BLKSIZ);
+	while (len > erofs_blksiz()) {
+		ret = dev_write(zero, offset, erofs_blksiz());
 		if (ret)
 			return ret;
-		len -= EROFS_BLKSIZ;
-		offset += EROFS_BLKSIZ;
+		len -= erofs_blksiz();
+		offset += erofs_blksiz();
 	}
 	return dev_write(zero, offset, len);
 }
@@ -240,7 +240,7 @@ int dev_resize(unsigned int blocks)
 		return -errno;
 	}
 
-	length = (u64)blocks * EROFS_BLKSIZ;
+	length = (u64)blocks * erofs_blksiz();
 	if (st.st_size == length)
 		return 0;
 	if (st.st_size > length)
@@ -256,10 +256,12 @@ int dev_resize(unsigned int blocks)
 
 int dev_read(int device_id, void *buf, u64 offset, size_t len)
 {
-	int ret, fd;
+	int read_count, fd;
 
 	if (cfg.c_dry_run)
 		return 0;
+
+	offset += cfg.c_offset;
 
 	if (!buf) {
 		erofs_err("buf is NULL");
@@ -276,15 +278,27 @@ int dev_read(int device_id, void *buf, u64 offset, size_t len)
 		fd = erofs_blobfd[device_id - 1];
 	}
 
+	while (len > 0) {
 #ifdef HAVE_PREAD64
-	ret = pread64(fd, buf, len, (off64_t)offset);
+		read_count = pread64(fd, buf, len, (off64_t)offset);
 #else
-	ret = pread(fd, buf, len, (off_t)offset);
+		read_count = pread(fd, buf, len, (off_t)offset);
 #endif
-	if (ret != (int)len) {
-		erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
-			  erofs_devname, offset, len);
-		return -errno;
+		if (read_count < 1) {
+			if (!read_count) {
+				erofs_info("Reach EOF of device - %s:[%" PRIu64 ", %zd].",
+					   erofs_devname, offset, len);
+				memset(buf, 0, len);
+				read_count = len;
+			} else if (errno != EINTR) {
+				erofs_err("Failed to read data from device - %s:[%" PRIu64 ", %zd].",
+					  erofs_devname, offset, len);
+				return -errno;
+			}
+		}
+		offset += read_count;
+		len -= read_count;
+		buf += read_count;
 	}
 	return 0;
 }

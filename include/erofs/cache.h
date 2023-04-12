@@ -22,10 +22,12 @@ struct erofs_buffer_block;
 #define META		1
 /* including inline xattrs, extent */
 #define INODE		2
+/* directory data */
+#define DIRA		3
 /* shared xattrs */
-#define XATTR		3
+#define XATTR		4
 /* device table */
-#define DEVT		4
+#define DEVT		5
 
 struct erofs_bhops {
 	bool (*preflush)(struct erofs_buffer_head *bh);
@@ -55,11 +57,14 @@ struct erofs_buffer_block {
 static inline const int get_alignsize(int type, int *type_ret)
 {
 	if (type == DATA)
-		return EROFS_BLKSIZ;
+		return erofs_blksiz();
 
 	if (type == INODE) {
 		*type_ret = META;
 		return sizeof(struct erofs_inode_compact);
+	} else if (type == DIRA) {
+		*type_ret = META;
+		return erofs_blksiz();
 	} else if (type == XATTR) {
 		*type_ret = META;
 		return sizeof(struct erofs_xattr_entry);
@@ -75,7 +80,6 @@ static inline const int get_alignsize(int type, int *type_ret)
 
 extern const struct erofs_bhops erofs_drop_directly_bhops;
 extern const struct erofs_bhops erofs_skip_write_bhops;
-extern const struct erofs_bhops erofs_buf_write_bhops;
 
 static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 {
@@ -84,7 +88,7 @@ static inline erofs_off_t erofs_btell(struct erofs_buffer_head *bh, bool end)
 	if (bb->blkaddr == NULL_ADDR)
 		return NULL_ADDR_UL;
 
-	return blknr_to_addr(bb->blkaddr) +
+	return erofs_pos(bb->blkaddr) +
 		(end ? list_next_entry(bh, list)->off : bh->off);
 }
 
