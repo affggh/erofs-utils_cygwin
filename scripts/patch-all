@@ -1,0 +1,20 @@
+#!/bin/sh
+
+patch_all() {
+  patch_dirs=$(ls patch/)
+  current_dir=$(pwd)
+  for i in $patch_dirs; do
+    echo "- Patch working at dir $i..."
+    cd "$i"
+
+    patches=$(find "$current_dir/patch/$i" -name \*.patch | tr "\n" " ")
+    for j in $patches; do
+      echo "- Patching file $j..."
+      git apply $j || true
+    done
+
+    cd "$current_dir"
+  done
+}
+
+patch_all

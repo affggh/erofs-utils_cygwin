@@ -1,3 +1,6 @@
 [submodule "libbase"]
 	path = libbase
 	url = https://android.googlesource.com/platform/system/libbase
+[submodule "logging"]
+	path = logging
+	url = https://chromium.googlesource.com/aosp/platform/system/logging
