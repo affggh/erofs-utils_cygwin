@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+
+cyg_version() {
+    # just simple version + date + modifier
+    modifier="affggh"
+    os="uname -o"
+    local_date=$(date +%y%m%d)
+
+    printf "%s-%s-%s" "$modifier" "$os" "$local_Date"
+}
+
+echo $(sed -n '1p' VERSION | tr -d '\n')$(cyg_version)
