@@ -103,7 +103,6 @@ char *erofs_trim_for_progressinfo(const char *str, int placeholder)
 
 #ifdef GWINSZ_IN_SYS_IOCTL
 	struct winsize winsize;
-
 	if(ioctl(1, TIOCGWINSZ, &winsize) >= 0 &&
 	   winsize.ws_col > 0)
 		col = winsize.ws_col;
