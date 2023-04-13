@@ -6,7 +6,6 @@
 *.lo
 *.mod.c
 *.orig
-*.patch
 *.rej
 *.so
 *.so.dbg
