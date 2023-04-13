@@ -6,7 +6,7 @@ SHELL = bash
 override CXXFLAGS := $(CXXFLAGS) -std=c++17
 
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-CXXFLAGS += -stdlib=libc++ -static
+override CXXFLAGS := $(CXXFLAGS) -stdlib=libc++ -static
 endif
 
 libcutils_src = \
