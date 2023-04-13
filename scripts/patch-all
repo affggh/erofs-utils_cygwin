@@ -10,7 +10,9 @@ patch_all() {
     patches=$(find "$current_dir/patch/$i" -name \*.patch | tr "\n" " ")
     for j in $patches; do
       echo "- Patching file $j..."
-      git apply $j || true
+      # Reset Before patch
+      git reset --hard HEAD
+      patch -t -p1 -N -l -i "$j"
     done
 
     cd "$current_dir"
