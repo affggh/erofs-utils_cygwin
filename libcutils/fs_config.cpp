@@ -24,7 +24,14 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#ifndef __MINGW32__
 #include <fnmatch.h>
+#else
+// For PathMatchSpecA
+#include <windef.h>
+#include <shlwapi.h>
+#include "../asprintf.h"
+#endif // __MINGW32__
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -272,6 +279,19 @@ static bool is_partition(const std::string& path) {
     return false;
 }
 
+#ifdef __MINGW32__
+static int fnmatch(const char *pattern, const char *string, int flags)
+{
+    if (flags == -1)
+        return 1;
+    if (PathMatchSpecA(pattern, string) == true) {
+        return 0;
+    } else {
+        return 1; //FNM_NOMATCH
+    }
+}
+#endif // __MINGW32__
+
 // alias prefixes of "<partition>/<stuff>" to "system/<partition>/<stuff>" or
 // "system/<partition>/<stuff>" to "<partition>/<stuff>"
 static bool fs_config_cmp(bool dir, const char* prefix, size_t len, const char* path, size_t plen) {
@@ -293,6 +313,10 @@ static bool fs_config_cmp(bool dir, const char* prefix, size_t len, const char* 
             }
         }
     }
+
+#ifndef FNM_NOESCAPE
+#define FNM_NOESCAPE 1
+#endif
 
     // no FNM_PATHNAME is set in order to match a/b/c/d with a/*
     // FNM_ESCAPE is set in order to prevent using \\? and \\* and maintenance issues.

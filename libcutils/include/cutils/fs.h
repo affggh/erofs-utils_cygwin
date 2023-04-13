@@ -26,6 +26,9 @@
  * not already defined, then define it here.
  */
 #ifndef TEMP_FAILURE_RETRY
+#ifdef __MINGW32__
+#define TEMP_FAILURE_RETRY(exp) (exp)
+#else
 /* Used to retry syscalls that can return EINTR. */
 #define TEMP_FAILURE_RETRY(exp) ({         \
     typeof (exp) _rc;                      \
@@ -33,12 +36,14 @@
         _rc = (exp);                       \
     } while (_rc == -1 && errno == EINTR); \
     _rc; })
-#endif
+#endif // __MINGW32__
+#endif 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#ifndef __MINGW64__
 /*
  * Ensure that directory exists with given mode and owners.  If it exists
  * with a different mode or owners, they are fixed to match the given values.
@@ -77,6 +82,8 @@ extern int fs_write_atomic_int(const char* path, int value);
  * is treated as filename and ignored, unless the path ends with "/".
  */
 extern int fs_mkdirs(const char* path, mode_t mode);
+
+#endif
 
 #ifdef __cplusplus
 }
