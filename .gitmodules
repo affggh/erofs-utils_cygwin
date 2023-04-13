@@ -10,3 +10,6 @@
 [submodule "extract"]
 	path = extract
 	url = https://github.com/sekaiacg/erofs-utils
+[submodule "libpcre"]
+	path = libpcre
+	url = https://github.com/vmg/libpcre
