@@ -19,12 +19,15 @@ patch_all() {
   done
   # add for extract.erofs
   if [ "$(uname -o)" = "Cygwin" ]; then
-    echo "- Detect cygwin environment, patch extract.erofs source"
-    list_of_extract=$(find extract/extract -name \*.cpp | tr "\n" " ")
-    for i in $list_of_extract; do
-      sed -i "s/\[\[unlikely\]\]//g" "$i"
-      sed -i "s/\[\[likely\]\]//g" "$i"
-    done
+    if [ -d "extract" ]; then
+      echo "- Detect cygwin environment, patch extract.erofs source"
+      list_of_extract=$(find extract/extract -name \*.cpp | tr "\n" " ")
+      for i in $list_of_extract; do
+        # Remove unsupport attribute on clang-8
+        sed -i "s/\[\[unlikely\]\]//g" "$i"
+        sed -i "s/\[\[likely\]\]//g" "$i"
+      done
+    fi
   fi
 }
 
