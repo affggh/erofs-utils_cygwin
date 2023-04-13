@@ -1,0 +1,59 @@
+
+name: build_cygwin
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build_cygwin.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/build_cygwin.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Cygwin
+        uses: egor-tensin/setup-cygwin@v3
+        with:
+          platform: x64
+          packages: cmake make gcc-g++ github iconv-devel zlib-devel clang llvm zip unzip curl sed libpcre-devel libpcre2-devel liblzma-devel gettext gettext-devel libtool automake autoconf po4a
+
+      - name: Clone source code
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          git clone --recurse-submodules https://github.com/affggh/erofs-utils_cygwin.git -b dev erofs
+          cd erofs
+          
+      - name: Patch all submodules
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          cd erofs && ./scripts/patch-all
+
+      - name: Building
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          cd erofs
+          # build
+          make -j$(nproc --all)
+          # output
+          ls -lh bin
+          
+      - name: Repack out
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          cd erofs
+          zip -r erofs_cygwin64.zip bin
+          
+      - name: Upload output to GH-Release
+        uses: ncipollo/release-action@v1.8.6
+        with:
+          artifacts: C:\tools\cygwin\home\runneradmin\erofs\erofs_cygwin64.zip
+          name: "erofs-${{ github.run_number }}-cygwin64"
+          tag: "erofs-${{ github.run_number }}-cygwin64"
+          bodyFile: C:\tools\cygwin\home\runneradmin\erofs\VERSION
+          token: ${{ secrets.GITHUB_TOKEN }}
