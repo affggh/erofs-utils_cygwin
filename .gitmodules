@@ -4,3 +4,6 @@
 [submodule "logging"]
 	path = logging
 	url = https://chromium.googlesource.com/aosp/platform/system/logging
+[submodule "lz4"]
+	path = lz4
+	url = https://github.com/lz4/lz4
