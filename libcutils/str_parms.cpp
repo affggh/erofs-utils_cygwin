@@ -136,6 +136,23 @@ void str_parms_destroy(struct str_parms *str_parms)
     free(str_parms);
 }
 
+#ifdef __MINGW32__
+static char *strndup(char *str, int chars)
+{
+    char *buffer;
+    int n;
+
+    buffer = (char *) malloc(chars +1);
+    if (buffer)
+    {
+        for (n = 0; ((n < chars) && (str[n] != 0)) ; n++) buffer[n] = str[n];
+        buffer[n] = 0;
+    }
+
+    return buffer;
+}
+#endif // __MINGW32__
+
 struct str_parms *str_parms_create_str(const char *_string)
 {
     struct str_parms *str_parms;
