@@ -112,6 +112,25 @@
 THREAD_LOCAL unsigned short jrand_seed[3];
 #endif
 
+#ifdef _WIN32
+#include <windef.h>
+#include <winbase.h>
+
+// This function only used in 
+// this lib for generating rand number
+static int getuid()
+{
+	char username[1024];
+	DWORD namelen = sizeof username;
+	GetUserName(username, &namelen);
+	int fakeuid = (username[0]<<24)+ \
+				  (username[1]<<16)+ \
+				  (username[2]<<8) + \
+				  (username[4]);
+	return fakeuid;
+}
+#endif
+
 static int get_random_fd(void)
 {
 	struct timeval	tv;
