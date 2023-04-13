@@ -38,7 +38,10 @@ EROFS_DEF_DEFINES = \
 # Add cygwin remove unsupport flags
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
-override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
+override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES)) \
+	-Dstat64=stat \
+	-Dlstat64=lstat \
+	-Dno=\#warnings
 endif
 
 # Add on for extract.erofs
@@ -173,7 +176,7 @@ erofs-utils-version.h:
 # link this program static
 .lib/libpcre.a:
 	@mkdir -p `dirname $@`
-#	@cd libpcre && ./autogen.sh && ./configure && $(MAKE)
+	@cd libpcre && ./autogen.sh && ./configure && $(MAKE) libpcre.la
 	@$(CP) libpcre/.libs/`basename $@` $@
 
 bin/mkfs.erofs$(ext): $(mkfs_obj) $(all_lib)
