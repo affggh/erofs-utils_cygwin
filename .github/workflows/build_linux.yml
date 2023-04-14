@@ -1,0 +1,62 @@
+# This is a basic workflow that is manually triggered
+
+name: build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Python2
+        uses: actions/setup-python@v3.1.2
+        with:
+          python-version: "2.7"
+
+      - name: Setup Python3
+        uses: actions/setup-python@v3.1.2
+        with:
+          python-version: "3.8"
+
+      - name: Setup environment
+        run: |
+          sudo apt-get update        
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib clang llvm git gnupg gperf autopoint libtool gettext perl m4 po4a libpcre++-dev imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev autoconf
+      
+      - name: Clone repo
+        run: |
+          git clone --recurse-submodules https://github.com/affggh/erofs-utils_cygwin.git erofs
+          git clone https://github.com/sekaiacg/erofs-utils extract --depth=1 erofs/extract
+          git clone https://github.com/xz-mirror/xz xz
+
+      - name: Install xz
+        run: |
+          cd $GITHUB_WORKSPACE/xz
+          ./autogen.sh
+          ./configure
+          make -j$(nproc --all) && sudo make install
+          
+      - name: Patch & Build
+        run: |
+          cd $GITHUB_WORKSPACE/erofs
+          echo "EROFS_VERSION=$(sed -n '1p' VERSION | tr -d '\n')" >> $GITHUB_ENV
+          ./scripts/patch-all
+          make -j$(nproc --all)
+          ls -al out/**
+          
+      - name: Compress out
+        run: |
+          cd $GITHUB_WORKSPACE/erofs
+          7za a -tZIP erofs-utils_linux_x86_64.zip bin/*
+      - name: Upload output to GH-Release
+        uses: ncipollo/release-action@v1.8.6
+        with:
+          artifacts: "${{ github.workspace }}/erofs/erofs-utils_linux_x86_64.zip"
+          name: "erofs-utils-linux-x86_64-${{ env.EROFS_VERSION }}"
+          tag: "erofs-utils-${{ env.EROFS_VERSION }}-${{ github.run_number }}"
+          bodyFile: "${{ github.workspace}}/erofs/VERSION"
+          token: ${{ secrets.GITHUB_TOKEN }}
