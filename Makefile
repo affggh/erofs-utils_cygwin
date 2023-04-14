@@ -102,16 +102,25 @@ all_bin_prefix = \
 ifeq ($(shell [ -d "extract" ] && echo "true"), true)
 all_bin_prefix += extract
 endif
-
 all_bin = $(patsubst %,bin/%.erofs$(ext),$(all_bin_prefix))
+ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
+all_bin += bin/cygwin1.dll
+endif
+strip_bin = $(filter-out %.dll,$(all_bin))
 
 .PHONY: all
 
-all: lib bin
+all: lib bin strip-all
 
 lib: $(version_header) $(all_lib)
 
 bin: $(all_bin)
+
+strip-all:
+	@for i in $(strip_bin); do \
+	  echo -e "\tSTRIP    \t$$i"; \
+	  $(STRIP) --strip-unneeded $$i; \
+	done
 
 obj/%.o: %.c
 	@mkdir -p `dirname $@`
@@ -196,6 +205,12 @@ bin/extract.erofs$(ext): $(extract_obj) $(all_lib)
 	@mkdir -p `dirname $@`
 	@echo -e "\tLD\t    $@"
 	@$(LD) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# cygwin1.dll is needed
+bin/cygwin1.dll:
+	@mkdir -p `dirname $@`
+	@echo -e "\tCOPY    \t$@"
+	@$(CP) /$@ $@
 
 clean: 
 	@echo -e "\tRM    \tobj .lib bin"
