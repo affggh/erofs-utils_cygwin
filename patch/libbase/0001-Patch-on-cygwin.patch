@@ -1,0 +1,173 @@
+From 52aced66257e5acd4e7fc83984685cc07d1ff45f Mon Sep 17 00:00:00 2001
+From: affggh <879632264@qq.com>
+Date: Thu, 13 Apr 2023 12:08:37 +0800
+Subject: [PATCH] Patch on cygwin
+
+---
+ .clang-format        |  1 -
+ Makefile             | 57 ++++++++++++++++++++++++++++++++++++++++++++
+ cmsg.cpp             |  8 +++++++
+ file.cpp             |  4 ++++
+ posix_strerror_r.cpp |  3 +++
+ threads.cpp          |  4 ++--
+ 6 files changed, 74 insertions(+), 3 deletions(-)
+ mode change 120000 => 100644 .clang-format
+ create mode 100644 Makefile
+
+diff --git a/.clang-format b/.clang-format
+deleted file mode 120000
+index 7ab20d4..0000000
+--- a/.clang-format
++++ /dev/null
+@@ -1 +0,0 @@
+-../../build/soong/scripts/system-clang-format-2
+\ No newline at end of file
+diff --git a/.clang-format b/.clang-format
+new file mode 100644
+index 0000000..e69de29
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 0000000..97f8f16
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,57 @@
++CC = clang
++CXX = clang++
++CXXFLAGS = -std=c++17
++AR = ar
++ARFLAGS = rcs
++LD = $(CXX)
++LDFLAGS = 
++
++RM = rm -rf
++SHELL = bash
++
++ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
++CXXFLAGS += -stdlib=libc++ -static
++endif
++
++libbase_src = \
++    abi_compatibility.cpp \
++    chrono_utils.cpp \
++    file.cpp \
++    hex.cpp \
++    logging.cpp \
++    mapped_file.cpp \
++    parsebool.cpp \
++    parsenetaddress.cpp \
++    posix_strerror_r.cpp \
++    process.cpp \
++    properties.cpp \
++    stringprintf.cpp \
++    strings.cpp \
++    threads.cpp \
++    test_utils.cpp \
++    errors_unix.cpp
++libbase_obj = $(patsubst %.cpp,obj/%.o,$(libbase_src))
++libbase_cxxflags = \
++    -include "../cygprefix.h" \
++    -Wall \
++    -Wextra \
++    -Wexit-time-destructors \
++    -D_FILE_OFFSET_BITS=64
++CXXFLAGS += $(libbase_cxxflags)
++
++.PHONY: all
++
++all: .lib/libbase.a
++
++obj/%.o: %.cpp
++	@mkdir -p `dirname $@`
++	@echo -e "\t    CPP\t    $@"
++	@$(CXX) $(CXXFLAGS) -I./include -I../logging/liblog/include -c $< -o $@
++
++.lib/libbase.a: $(libbase_obj)
++	@mkdir -p `dirname $@`
++	@echo -e "\tAR    \t$@"
++	@$(AR) $(ARFLAGS) $@ $^
++
++clean:
++	@$(RM) obj .lib
+\ No newline at end of file
+diff --git a/cmsg.cpp b/cmsg.cpp
+index 95db303..52254d9 100644
+--- a/cmsg.cpp
++++ b/cmsg.cpp
+@@ -48,7 +48,11 @@ ssize_t SendFileDescriptorVector(borrowed_fd sockfd, const void* data, size_t le
+       .msg_iovlen = 1,
+       .msg_control = cmsg_buf,
+       // We can't cast to the actual type of the field, because it's different across platforms.
++#ifndef __CYGWIN__
+       .msg_controllen = static_cast<unsigned int>(cmsg_space),
++#else
++      .msg_controllen = static_cast<int>(cmsg_space),
++#endif // __CYGWIN__
+       .msg_flags = 0,
+   };
+ 
+@@ -91,7 +95,11 @@ ssize_t ReceiveFileDescriptorVector(borrowed_fd sockfd, void* data, size_t len,
+       .msg_iovlen = 1,
+       .msg_control = cmsg_buf,
+       // We can't cast to the actual type of the field, because it's different across platforms.
++#ifndef __CYGWIN__
+       .msg_controllen = static_cast<unsigned int>(cmsg_space),
++#else
++      .msg_controllen = static_cast<int>(cmsg_space),
++#endif // __CYGWIN__
+       .msg_flags = 0,
+   };
+ 
+diff --git a/file.cpp b/file.cpp
+index 69ee69f..4bbea85 100644
+--- a/file.cpp
++++ b/file.cpp
+@@ -33,6 +33,10 @@
+ #include <string>
+ #include <vector>
+ 
++#ifdef __CYGWIN__
++#define __linux__
++#endif // __CYGWIN__
++
+ #if defined(__APPLE__)
+ #include <mach-o/dyld.h>
+ #endif
+diff --git a/posix_strerror_r.cpp b/posix_strerror_r.cpp
+index 6428a98..99085f3 100644
+--- a/posix_strerror_r.cpp
++++ b/posix_strerror_r.cpp
+@@ -17,6 +17,9 @@
+ /* Undefine _GNU_SOURCE so that this compilation unit can access the
+  * posix version of strerror_r */
+ #undef _GNU_SOURCE
++#if defined(__CYGWIN__) || defined(__linux__)
++#define _POSIX_C_SOURCE 200809L // use posix strerror_r
++#endif
+ #include <string.h>
+ 
+ namespace android {
+diff --git a/threads.cpp b/threads.cpp
+index 6d7d7c6..9a0508a 100644
+--- a/threads.cpp
++++ b/threads.cpp
+@@ -23,7 +23,7 @@
+ #include <pthread.h>
+ #elif defined(__linux__) && !defined(__ANDROID__)
+ #include <syscall.h>
+-#elif defined(_WIN32)
++#elif defined(_WIN32) || defined(__CYGWIN__)
+ #include <windows.h>
+ #endif
+ 
+@@ -39,7 +39,7 @@ uint64_t GetThreadId() {
+   return tid;
+ #elif defined(__linux__)
+   return syscall(__NR_gettid);
+-#elif defined(_WIN32)
++#elif defined(_WIN32) || defined(__CYGWIN__)
+   return GetCurrentThreadId();
+ #endif
+ }
+-- 
+2.39.0
+

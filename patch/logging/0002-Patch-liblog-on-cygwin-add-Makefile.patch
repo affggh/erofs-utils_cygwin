@@ -1,0 +1,64 @@
+From 1562ad87784c5b5da5b7e7f6c0bbf5950343f1a4 Mon Sep 17 00:00:00 2001
+From: affggh <879632264@qq.com>
+Date: Wed, 12 Apr 2023 18:05:16 +0800
+Subject: [PATCH] Patch liblog on cygwin add Makefile
+
+---
+ Makefile | 44 ++++++++++++++++++++++++++++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+ create mode 100644 Makefile
+
+diff --git a/Makefile b/Makefile
+new file mode 100644
+index 00000000..b765e3a2
+--- /dev/null
++++ b/Makefile
+@@ -0,0 +1,44 @@
++CC = clang
++CXX = clang++
++AR = ar rcs
++SHELL = bash
++RM = rm -rf
++
++CXXFLAGS = -std=c++17
++
++ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
++override CXXFLAGS := $(CXXFLAGS) -stdlib=libc++ -static -D_Bool=bool
++endif
++
++liblog_src = \
++    liblog/log_event_list.cpp \
++    liblog/log_event_write.cpp \
++    liblog/logger_name.cpp \
++    liblog/logger_read.cpp \
++    liblog/logger_write.cpp \
++    liblog/logprint.cpp \
++    liblog/properties.cpp
++liblog_obj = $(patsubst %.cpp,obj/%.o,$(liblog_src))
++liblog_cxxflags = $(CXXFLAGS) \
++    -Wall \
++    -Wextra \
++    -Wexit-time-destructors \
++    -DLIBLOG_LOG_TAG=1006 \
++    -DSNET_EVENT_LOG_TAG=1397638484 
++
++.PHONY: all
++
++all: .lib/liblog.a
++
++obj/%.o: %.cpp
++	@mkdir -p `dirname $@`
++	@echo -e "\t    CPP\t    $@"
++	@$(CXX) $(liblog_cxxflags) -I./liblog/include -I../libbase/include -I../libcutils/include $(INCLUDES) -c $< -o $@
++
++.lib/liblog.a: $(liblog_obj)
++	@mkdir -p `dirname $@`
++	@echo -e "\tAR    \t$@"
++	@$(AR) $@ $^
++
++clean:
++	$(RM) obj .lib
+\ No newline at end of file
+-- 
+2.39.0
+
