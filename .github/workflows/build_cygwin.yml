@@ -30,10 +30,11 @@ jobs:
           cd erofs
           git clone https://github.com/sekaiacg/erofs-utils extract --depth=1
           
-      - name: Patch all submodules
+      - name: Patch
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
-          cd erofs && ./scripts/patch-all
+          cd erofs
+          sh scripts/patch-all
 
       - name: Building
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
