@@ -1,6 +1,6 @@
 # This is a basic workflow that is manually triggered
 
-name: build
+name: build_linux
 
 on:
   workflow_dispatch:
@@ -30,7 +30,7 @@ jobs:
       - name: Clone repo
         run: |
           git clone --recurse-submodules https://github.com/affggh/erofs-utils_cygwin.git erofs
-          git clone https://github.com/sekaiacg/erofs-utils extract --depth=1 erofs/extract
+          git clone https://github.com/sekaiacg/erofs-utils erofs/extract
           git clone https://github.com/xz-mirror/xz xz
 
       - name: Install xz
