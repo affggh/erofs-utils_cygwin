@@ -193,7 +193,7 @@ erofs-utils-version.h:
 # link this program static
 .lib/libpcre.a:
 	@mkdir -p `dirname $@`
-	@cd libpcre && ./autogen.sh && ./configure && $(MAKE)
+	@cd libpcre && ./autogen.sh && ./configure && $(MAKE) libpcre.la
 	@$(CP) libpcre/.libs/`basename $@` $@
 
 bin/mkfs.erofs$(ext): $(mkfs_obj) $(all_lib)
