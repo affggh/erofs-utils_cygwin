@@ -110,13 +110,13 @@ strip_bin = $(filter-out %.dll,$(all_bin))
 
 .PHONY: all
 
-all: lib bin strip-all
+all: lib strip-all
 
 lib: $(version_header) $(all_lib)
 
 bin: $(all_bin)
 
-strip-all:
+strip-all: bin
 	@for i in $(strip_bin); do \
 	  echo -e "\tSTRIP    \t$$i"; \
 	  $(STRIP) --strip-unneeded $$i; \
