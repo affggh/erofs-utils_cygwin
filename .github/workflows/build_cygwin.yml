@@ -36,6 +36,15 @@ jobs:
           cd erofs
           sh scripts/patch-all
 
+      - name: Install xz for liblzma
+        shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
+        run: |
+          git clone https://github.com/xz-mirror/xz xz
+          cd xz
+          ./autogen.sh || true
+          ./configure
+          make -j$(nproc --all) && make install
+
       - name: Building
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
