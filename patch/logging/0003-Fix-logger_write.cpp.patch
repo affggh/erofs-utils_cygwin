@@ -1,0 +1,50 @@
+From 7eb9b7fb0f7884935f3f93d6bc3562e813e886fe Mon Sep 17 00:00:00 2001
+From: affggh <879632264@qq.com>
+Date: Thu, 13 Apr 2023 13:54:53 +0800
+Subject: [PATCH] Fix logger_write.cpp
+
+---
+ liblog/logger_write.cpp | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/liblog/logger_write.cpp b/liblog/logger_write.cpp
+index 08ab6e20..17e6d3ed 100644
+--- a/liblog/logger_write.cpp
++++ b/liblog/logger_write.cpp
+@@ -48,7 +48,7 @@
+ #include <pthread.h>
+ #elif defined(__linux__) && !defined(__ANDROID__)
+ #include <syscall.h>
+-#elif defined(_WIN32)
++#elif defined(_WIN32) || defined(__CYGWIN__)
+ #include <windows.h>
+ #endif
+ 
+@@ -110,6 +110,7 @@ void __android_log_close() {
+ 
+ // BSD-based systems like Android/macOS have getprogname(). Others need us to provide one.
+ #if !defined(__APPLE__) && !defined(__BIONIC__)
++#ifndef __CYGWIN__
+ static const char* getprogname() {
+ #ifdef _WIN32
+   static bool first = true;
+@@ -132,6 +133,7 @@ static const char* getprogname() {
+   return program_invocation_short_name;
+ #endif
+ }
++#endif // __CYGWIN__
+ #endif
+ 
+ // It's possible for logging to happen during static initialization before our globals are
+@@ -237,7 +239,7 @@ static uint64_t GetThreadId() {
+   return tid;
+ #elif defined(__linux__)
+   return syscall(__NR_gettid);
+-#elif defined(_WIN32)
++#elif defined(_WIN32) || defined(__CYGWIN__)
+   return GetCurrentThreadId();
+ #endif
+ }
+-- 
+2.39.0
+

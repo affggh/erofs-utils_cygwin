@@ -73,8 +73,10 @@ dump_src = $(shell find dump -name \*.c)
 dump_obj = $(patsubst %.c,obj/%.o,$(dump_src))
 
 # Addon extract.erofs
+ifeq ($(shell [ -d "extract" ] && echo "true"), true)
 extract_src = $(shell find extract/extract -name \*.cpp)
 extract_obj = $(patsubst %.cpp,obj/%.o,$(extract_src))
+endif
 
 version_header = erofs-utils-version.h
 all_lib_prefix = \
@@ -96,8 +98,11 @@ all_lib = $(patsubst %,.lib/lib%.a,$(all_lib_prefix))
 all_bin_prefix = \
     mkfs \
     fsck \
-    dump \
-    extract
+    dump
+ifeq ($(shell [ -d "extract" ] && echo "true"), true)
+all_bin_prefix += extract
+endif
+
 all_bin = $(patsubst %,bin/%.erofs$(ext),$(all_bin_prefix))
 
 .PHONY: all
@@ -168,7 +173,7 @@ erofs-utils-version.h:
 # link this program static
 .lib/libpcre.a:
 	@mkdir -p `dirname $@`
-#	@cd libpcre && ./autogen.sh && ./configure && $(MAKE)
+	@cd libpcre && ./autogen.sh && ./configure && $(MAKE)
 	@$(CP) libpcre/.libs/`basename $@` $@
 
 bin/mkfs.erofs$(ext): $(mkfs_obj) $(all_lib)
