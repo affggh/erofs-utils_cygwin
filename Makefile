@@ -121,7 +121,7 @@ strip_bin = $(filter-out %.dll,$(all_bin))
 
 .PHONY: all
 
-all: lib strip-all
+all: lib bin
 
 lib: $(version_header) $(all_lib)
 
