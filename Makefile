@@ -44,8 +44,12 @@ endif
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
 endif
 ifeq ($(shell uname), Linux)
+ifeq ($(shell [ -e "/usr/local/lib/liblzma.a" ] && echo "true"), true)
+# if installed xz then enabled liblzma
 EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
-LDFLAGS += -llzma
+LDFLAGS += -L/usr/local/lib -llzma
+endif
+LDFLAGS += -lpthread -static
 endif
 
 # Add on for extract.erofs
@@ -53,6 +57,11 @@ CXXFLAGS += -DNDEBUG
 
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 CXXFLAGS += -stdlib=libc++ -static
+endif
+
+ifeq ($(shell uname), Linux)
+# [[likely]] [[unlikely]]
+CXXFLAGS += -Wno-unknown-attributes
 endif
 
 override CFLAGS := $(CFLAGS) $(EROFS_DEF_DEFINES)
@@ -94,12 +103,7 @@ all_lib_prefix = \
     log \
     lz4 \
     selinux
-ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-# linux can install libpcre++-dev like debian
 all_lib_prefix += pcre
-else
-LDFLAGS += -lpcre
-endif
 all_lib = $(patsubst %,.lib/lib%.a,$(all_lib_prefix))
 
 all_bin_prefix = \
