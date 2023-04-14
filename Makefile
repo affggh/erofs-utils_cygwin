@@ -33,8 +33,6 @@ EROFS_DEF_DEFINES = \
     -DHAVE_SYS_IOCTL_H \
     -DHAVE_LLISTXATTR \
     -DHAVE_LGETXATTR
-
-
 # Add cygwin remove unsupport flags
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
@@ -42,6 +40,15 @@ override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFIN
 	-Dstat64=stat \
 	-Dlstat64=lstat \
 	-Dno=\#warnings
+ifeq ($(shell [ -e "/usr/local/lib/liblzma.a" ] && echo "true"), true)
+# if installed xz then enabled liblzma
+EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
+LDFLAGS += -L/usr/local/lib -llzma
+override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
+endif
+ifeq ($(shell uname), Linux)
+EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
+LDFLAGS += -llzma
 endif
 
 # Add on for extract.erofs
