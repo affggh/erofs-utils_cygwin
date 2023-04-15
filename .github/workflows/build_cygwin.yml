@@ -27,8 +27,6 @@ jobs:
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
         run: |
           git clone --recurse-submodules --depth=1 https://github.com/affggh/erofs-utils_cygwin.git -b dev erofs
-          cd erofs
-          git clone https://github.com/sekaiacg/erofs-utils extract --depth=1
           
       - name: Patch
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
