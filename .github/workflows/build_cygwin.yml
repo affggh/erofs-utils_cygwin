@@ -53,6 +53,10 @@ jobs:
           make -j$(nproc --all)
           # output
           ls -lh bin
+          # strip them to reduce size
+          for i in $(find bin -name \*.exe); do
+            llvm-strip --strip-unneeded $i
+          done
           
       - name: Repack out
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
