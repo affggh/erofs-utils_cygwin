@@ -1,12 +1,14 @@
-CC = clang
-CXX = clang++
+CC = clang -g
+CXX = clang++ -g
 AR = ar rcs
 STRIP = llvm-strip
-LD = clang++
+LD = clang++ -g
 LDFLAGS =
 SHELL = bash
 RM = rm -rf
 CP = cp -f
+CFLAGS = -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+CXXFLAGS =
 
 ifeq ($(shell uname -s | cut -d "-" -f 1 | cut -d "_" -f 2), NT)
 ext = .exe
@@ -33,30 +35,22 @@ EROFS_DEF_DEFINES = \
     -DHAVE_SYS_IOCTL_H \
     -DHAVE_LLISTXATTR \
     -DHAVE_LGETXATTR
+ifeq ($(shell [ -e "/usr/local/lib/liblzma.a" ] && echo "true"), true)
+# if installed xz from source then enabled liblzma
+EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
+LDFLAGS += -L/usr/local/lib -llzma
+endif
 # Add cygwin remove unsupport flags
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
-ifeq ($(shell [ -e "/usr/local/lib/liblzma.a" ] && echo "true"), true)
-# if installed xz then enabled liblzma
-EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
-LDFLAGS += -L/usr/local/lib -llzma
-endif
+EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE -D_GNU_SOURCE
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
-endif
-ifeq ($(shell uname), Linux)
-ifeq ($(shell [ -e "/usr/local/lib/liblzma.a" ] && echo "true"), true)
-# if installed xz then enabled liblzma
-EROFS_DEF_DEFINES += -DHAVE_LIBLZMA
-LDFLAGS += -L/usr/local/lib -llzma
-endif
-LDFLAGS += -lpthread -static
 endif
 
 # Add on for extract.erofs
 CXXFLAGS += -DNDEBUG
 
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-CXXFLAGS += -stdlib=libc++ -static
+CXXFLAGS += -stdlib=libc++ -static -include"cyglink.h" -DHAVE_UTIMENSAT
 endif
 
 ifeq ($(shell uname), Linux)
