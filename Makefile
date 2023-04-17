@@ -1,8 +1,8 @@
-CC = clang -g
-CXX = clang++ -g
+CC = clang
+CXX = clang++
 AR = ar rcs
 STRIP = llvm-strip
-LD = clang++ -g
+LD = clang++
 LDFLAGS =
 SHELL = bash
 RM = rm -rf
