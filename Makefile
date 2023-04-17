@@ -44,6 +44,7 @@ endif
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE -D_GNU_SOURCE
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
+LDFLAGS += -liconv
 endif
 
 # Add on for extract.erofs
