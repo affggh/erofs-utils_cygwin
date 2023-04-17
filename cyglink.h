@@ -52,7 +52,8 @@ static inline int cyglink(const char *oldpath, const char *newpath)
 
     write(fd, __CYGLINK_MAGIC, sizeof(__CYGLINK_MAGIC)-1);
     write(fd, __CYGLINK_BOM, sizeof(__CYGLINK_BOM)-1);
-    write(fd, buf, __CYGLINK_BUFSZ - outbytesleft + 2);
+    write(fd, buf, __CYGLINK_BUFSZ - outbytesleft);
+    write(fd, "\x00\x00", 2);
 
     close(fd);
     free(buf);
