@@ -55,7 +55,7 @@ jobs:
           ls -lh bin
           # strip them to reduce size
           for i in $(find bin -name \*.exe); do
-            llvm-strip --strip-unneeded $i
+            strip --strip-unneeded $i && echo "STRIP $i"
           done
           
       - name: Repack out
