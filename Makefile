@@ -1,7 +1,7 @@
 CC = clang
 CXX = clang++
 AR = ar rcs
-STRIP = llvm-strip
+STRIP = strip
 LD = clang++
 LDFLAGS =
 SHELL = bash
@@ -42,7 +42,7 @@ LDFLAGS += -L/usr/local/lib -llzma
 endif
 # Add cygwin remove unsupport flags
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE -D_GNU_SOURCE
+EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
 LDFLAGS += -liconv
 endif
@@ -51,7 +51,7 @@ endif
 CXXFLAGS += -DNDEBUG
 
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
-CXXFLAGS += -stdlib=libc++ -static -include"cyglink.h" -DHAVE_UTIMENSAT
+CXXFLAGS += -stdlib=libc++ -static -DHAVE_UTIMENSAT
 endif
 
 ifeq ($(shell uname), Linux)
