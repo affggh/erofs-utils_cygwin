@@ -7,8 +7,8 @@ LDFLAGS =
 SHELL = bash
 RM = rm -rf
 CP = cp -f
-CFLAGS = -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
-CXXFLAGS =
+#CFLAGS = -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64
+#CXXFLAGS =
 
 ifeq ($(shell uname -s | cut -d "-" -f 1 | cut -d "_" -f 2), NT)
 ext = .exe
