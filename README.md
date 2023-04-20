@@ -12,7 +12,7 @@ aosp project
 
 ## How to build
 ### Prepare
-####***prepare environment***
+#### ***prepare environment***
 install in setup_x86_64.exe from [cygwin](https://cygwin.org)      
 make gcc-core gcc-g++ github    
 libiconv-devel zlib-devel    
@@ -20,7 +20,7 @@ clang llvm libpcre-devel
 liblzma-devel gettext    
 gettext-devel libtool    
 automake autoconf po4a patch    
-####***install xz***    
+#### ***install xz***    
 if you no need lzma compressor you can skip this step
 ```sh
 git clone https://github.com/xz-mirror/xz xz
@@ -28,7 +28,7 @@ cd xz && ./autogen.sh
 ./configure
 make && make install
 ```
-####***make***    
+#### ***make***    
 ```sh
 git clone https://github.com/affggh/erofs-utils_cygwin erofs
 cd erofs
