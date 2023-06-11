@@ -41,6 +41,12 @@ static inline unsigned int xattrblock_offset(unsigned int xattr_id)
 	(_size - sizeof(struct erofs_xattr_ibody_header)) / \
 	sizeof(struct erofs_xattr_entry) + 1; })
 
+#ifndef XATTR_SYSTEM_PREFIX
+#define XATTR_SYSTEM_PREFIX	"system."
+#endif
+#ifndef XATTR_SYSTEM_PREFIX_LEN
+#define XATTR_SYSTEM_PREFIX_LEN (sizeof(XATTR_SYSTEM_PREFIX) - 1)
+#endif
 #ifndef XATTR_USER_PREFIX
 #define XATTR_USER_PREFIX	"user."
 #endif
@@ -69,6 +75,10 @@ static inline unsigned int xattrblock_offset(unsigned int xattr_id)
 int erofs_prepare_xattr_ibody(struct erofs_inode *inode);
 char *erofs_export_xattr_ibody(struct list_head *ixattrs, unsigned int size);
 int erofs_build_shared_xattrs_from_path(const char *path);
+
+int erofs_xattr_insert_name_prefix(const char *prefix);
+void erofs_xattr_cleanup_name_prefixes(void);
+int erofs_xattr_write_name_prefixes(FILE *f);
 
 #ifdef __cplusplus
 }

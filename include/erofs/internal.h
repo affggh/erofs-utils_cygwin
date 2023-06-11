@@ -27,15 +27,9 @@ typedef unsigned short umode_t;
 #define PATH_MAX        4096    /* # chars in a path name including nul */
 #endif
 
-#ifndef PAGE_SHIFT
-#define PAGE_SHIFT		(12)
+#ifndef EROFS_MAX_BLOCK_SIZE
+#define EROFS_MAX_BLOCK_SIZE	4096
 #endif
-
-#ifndef PAGE_SIZE
-#define PAGE_SIZE		(1U << PAGE_SHIFT)
-#endif
-
-#define EROFS_MAX_BLOCK_SIZE	PAGE_SIZE
 
 #define EROFS_ISLOTBITS		5
 #define EROFS_SLOTSIZE		(1U << EROFS_ISLOTBITS)
@@ -102,6 +96,9 @@ struct erofs_sb_info {
 		u16 device_id_mask;		/* used for others */
 	};
 	erofs_nid_t packed_nid;
+
+	u32 xattr_prefix_start;
+	u8 xattr_prefix_count;
 };
 
 /* make sure that any user of the erofs headers has atleast 64bit off_t type */
@@ -126,7 +123,7 @@ static inline void erofs_sb_clear_##name(void) \
 	sbi.feature_##compat &= ~EROFS_FEATURE_##feature; \
 }
 
-EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_LZ4_0PADDING)
+EROFS_FEATURE_FUNCS(lz4_0padding, incompat, INCOMPAT_ZERO_PADDING)
 EROFS_FEATURE_FUNCS(compr_cfgs, incompat, INCOMPAT_COMPR_CFGS)
 EROFS_FEATURE_FUNCS(big_pcluster, incompat, INCOMPAT_BIG_PCLUSTER)
 EROFS_FEATURE_FUNCS(chunked_file, incompat, INCOMPAT_CHUNKED_FILE)
@@ -134,6 +131,7 @@ EROFS_FEATURE_FUNCS(device_table, incompat, INCOMPAT_DEVICE_TABLE)
 EROFS_FEATURE_FUNCS(ztailpacking, incompat, INCOMPAT_ZTAILPACKING)
 EROFS_FEATURE_FUNCS(fragments, incompat, INCOMPAT_FRAGMENTS)
 EROFS_FEATURE_FUNCS(dedupe, incompat, INCOMPAT_DEDUPE)
+EROFS_FEATURE_FUNCS(xattr_prefixes, incompat, INCOMPAT_XATTR_PREFIXES)
 EROFS_FEATURE_FUNCS(sb_chksum, compat, COMPAT_SB_CHKSUM)
 
 #define EROFS_I_EA_INITED	(1 << 0)
@@ -365,12 +363,12 @@ static inline int erofs_get_occupied_size(const struct erofs_inode *inode,
 	case EROFS_INODE_CHUNK_BASED:
 		*size = inode->i_size;
 		break;
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		*size = inode->u.i_blocks * erofs_blksiz();
 		break;
 	default:
-		return -ENOTSUP;
+		return -EOPNOTSUPP;
 	}
 	return 0;
 }

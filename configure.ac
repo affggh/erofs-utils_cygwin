@@ -29,6 +29,41 @@ else
   AC_MSG_ERROR([pkg-config is required. See pkg-config.freedesktop.org])
 fi
 
+dnl Check if the flag is supported by compiler
+dnl CC_CHECK_CFLAGS_SILENT([FLAG], [ACTION-IF-FOUND],[ACTION-IF-NOT-FOUND])
+AC_DEFUN([CC_CHECK_CFLAGS_SILENT], [
+  AC_CACHE_VAL(AS_TR_SH([cc_cv_cflags_$1]),
+    [ac_save_CFLAGS="$CFLAGS"
+     CFLAGS="$CFLAGS $1"
+     AC_LINK_IFELSE([AC_LANG_SOURCE([int main() { return 0; }])],
+       [eval "AS_TR_SH([cc_cv_cflags_$1])='yes'"],
+       [eval "AS_TR_SH([cc_cv_cflags_$1])='no'"])
+     CFLAGS="$ac_save_CFLAGS"
+    ])
+
+  AS_IF([eval test x$]AS_TR_SH([cc_cv_cflags_$1])[ = xyes],
+    [$2], [$3])
+])
+
+dnl Check if the flag is supported by compiler (cacheable)
+dnl CC_CHECK_CFLAG([FLAG], [ACTION-IF-FOUND],[ACTION-IF-NOT-FOUND])
+AC_DEFUN([CC_CHECK_CFLAG], [
+  AC_CACHE_CHECK([if $CC supports $1 flag],
+    AS_TR_SH([cc_cv_cflags_$1]),
+    CC_CHECK_CFLAGS_SILENT([$1]) dnl Don't execute actions here!
+  )
+
+  AS_IF([eval test x$]AS_TR_SH([cc_cv_cflags_$1])[ = xyes],
+    [$2], [$3])
+])
+
+dnl CC_CHECK_CFLAGS([FLAG1 FLAG2], [action-if-found], [action-if-not])
+AC_DEFUN([CC_CHECK_CFLAGS], [
+  for flag in $1; do
+    CC_CHECK_CFLAG($flag, [$2], [$3])
+  done
+])
+
 dnl EROFS_UTILS_PARSE_DIRECTORY
 dnl Input:  $1 = a string to a relative or absolute directory
 dnl Output: $2 = the variable to set with the absolute directory
@@ -59,6 +94,8 @@ AC_DEFUN([EROFS_UTILS_PARSE_DIRECTORY],
  fi
 ])
 
+AC_ARG_VAR([MAX_BLOCK_SIZE], [The maximum block size which erofs-utils supports])
+
 AC_ARG_ENABLE([debug],
     [AS_HELP_STRING([--enable-debug],
                     [enable debugging mode @<:@default=no@:>@])],
@@ -70,6 +107,12 @@ AC_ARG_ENABLE([werror],
                     [enable -Werror @<:@default=no@:>@])],
     [enable_werror="$enableval"],
     [enable_werror="no"])
+
+AC_ARG_ENABLE([fuzzing],
+    [AS_HELP_STRING([--enable-fuzzing],
+                    [set up fuzzing mode @<:@default=no@:>@])],
+    [enable_fuzzing="$enableval"],
+    [enable_fuzzing="no"])
 
 AC_ARG_ENABLE(lz4,
    [AS_HELP_STRING([--disable-lz4], [disable LZ4 compression support @<:@default=enabled@:>@])],
@@ -202,6 +245,35 @@ AC_CHECK_FUNCS(m4_flatten([
 	tmpfile64
 	utimensat]))
 
+# Detect maximum block size if necessary
+AS_IF([test "x$MAX_BLOCK_SIZE" = "x"], [
+  AC_CACHE_CHECK([sysconf (_SC_PAGESIZE)], [erofs_cv_max_block_size],
+               AC_RUN_IFELSE([AC_LANG_PROGRAM(
+[[
+#include <unistd.h>
+#include <stdio.h>
+]],
+[[
+    int result;
+    FILE *f;
+
+    result = sysconf(_SC_PAGESIZE);
+    if (result < 0)
+	return 1;
+
+    f = fopen("conftest.out", "w");
+    if (!f)
+	return 1;
+
+    fprintf(f, "%d", result);
+    fclose(f);
+    return 0;
+]])],
+                             [erofs_cv_max_block_size=`cat conftest.out`],
+                             [],
+                             []))
+], [erofs_cv_max_block_size=$MAX_BLOCK_SIZE])
+
 # Configure debug mode
 AS_IF([test "x$enable_debug" != "xno"], [], [
   dnl Turn off all assert checking.
@@ -325,6 +397,16 @@ fi
 # Enable 64-bit off_t
 CFLAGS+=" -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64"
 
+# Configure fuzzing mode
+AS_IF([test "x$enable_fuzzing" != "xyes"], [], [
+  CC_CHECK_CFLAGS(["-fsanitize=address,fuzzer-no-link"], [
+    CFLAGS="$CFLAGS -g -O1 -fsanitize=address,fuzzer-no-link"
+  ], [
+    AC_MSG_ERROR([Compiler doesn't support `-fsanitize=address,fuzzer-no-link`])
+  ])
+])
+AM_CONDITIONAL([ENABLE_FUZZING], [test "x${enable_fuzzing}" = "xyes"])
+
 # Set up needed symbols, conditionals and compiler/linker flags
 AM_CONDITIONAL([ENABLE_LZ4], [test "x${have_lz4}" = "xyes"])
 AM_CONDITIONAL([ENABLE_LZ4HC], [test "x${have_lz4hc}" = "xyes"])
@@ -366,6 +448,13 @@ if test "x${have_liblzma}" = "xyes"; then
   AC_SUBST([liblzma_LIBS])
   AC_SUBST([liblzma_CFLAGS])
 fi
+
+# Dump maximum block size
+AS_IF([test "x$erofs_cv_max_block_size" = "x"],
+      [$erofs_cv_max_block_size = 4096], [])
+
+AC_DEFINE_UNQUOTED([EROFS_MAX_BLOCK_SIZE], [$erofs_cv_max_block_size],
+		   [The maximum block size which erofs-utils supports])
 
 AC_CONFIG_FILES([Makefile
 		 man/Makefile

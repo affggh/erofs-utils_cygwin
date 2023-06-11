@@ -57,6 +57,7 @@ static struct option long_options[] = {
 	{"uid-offset", required_argument, NULL, 16},
 	{"gid-offset", required_argument, NULL, 17},
 	{"mount-point", required_argument, NULL, 512},
+	{"xattr-prefix", required_argument, NULL, 19},
 #ifdef WITH_ANDROID
 	{"product-out", required_argument, NULL, 513},
 	{"fs-config-file", required_argument, NULL, 514},
@@ -116,6 +117,7 @@ static void usage(void)
 	      " --random-pclusterblks randomize pclusterblks for big pcluster (debugging only)\n"
 	      " --random-algorithms   randomize per-file algorithms (debugging only)\n"
 #endif
+	      " --xattr-prefix=X      X=extra xattr name prefix\n"
 	      " --mount-point=X       X=prefix of target fs path (default: /)\n"
 #ifdef WITH_ANDROID
 	      "\nwith following android-specific options:\n"
@@ -470,6 +472,16 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 				return -EINVAL;
 			}
 			break;
+		case 19:
+			errno = 0;
+			opt = erofs_xattr_insert_name_prefix(optarg);
+			if (opt) {
+				erofs_err("failed to parse xattr name prefix: %s",
+					  erofs_strerror(opt));
+				return opt;
+			}
+			cfg.c_extra_ea_name_prefixes = true;
+			break;
 		case 1:
 			usage();
 			exit(0);
@@ -520,7 +532,7 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
 	}
-	if (cfg.c_compr_alg[0] && erofs_blksiz() != PAGE_SIZE) {
+	if (cfg.c_compr_alg[0] && erofs_blksiz() != EROFS_MAX_BLOCK_SIZE) {
 		erofs_err("compression is unsupported for now with block size %u",
 			  erofs_blksiz());
 		return -EINVAL;
@@ -565,8 +577,10 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 		.build_time = cpu_to_le64(sbi.build_time),
 		.build_time_nsec = cpu_to_le32(sbi.build_time_nsec),
 		.blocks = 0,
-		.meta_blkaddr  = sbi.meta_blkaddr,
-		.xattr_blkaddr = sbi.xattr_blkaddr,
+		.meta_blkaddr  = cpu_to_le32(sbi.meta_blkaddr),
+		.xattr_blkaddr = cpu_to_le32(sbi.xattr_blkaddr),
+		.xattr_prefix_count = sbi.xattr_prefix_count,
+		.xattr_prefix_start = cpu_to_le32(sbi.xattr_prefix_start),
 		.feature_incompat = cpu_to_le32(sbi.feature_incompat),
 		.feature_compat = cpu_to_le32(sbi.feature_compat &
 					      ~EROFS_FEATURE_COMPAT_SB_CHKSUM),
@@ -585,7 +599,7 @@ int erofs_mkfs_update_super_block(struct erofs_buffer_head *bh,
 	memcpy(sb.volume_name, sbi.volume_name, sizeof(sb.volume_name));
 
 	if (erofs_sb_has_compr_cfgs())
-		sb.u1.available_compr_algs = sbi.available_compr_algs;
+		sb.u1.available_compr_algs = cpu_to_le16(sbi.available_compr_algs);
 	else
 		sb.u1.lz4_max_distance = cpu_to_le16(sbi.lz4_max_distance);
 
@@ -656,8 +670,8 @@ static void erofs_mkfs_default_options(void)
 {
 	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
-	sbi.blkszbits = ilog2(PAGE_SIZE);
-	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_LZ4_0PADDING;
+	sbi.blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
+	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
 
@@ -712,6 +726,7 @@ int main(int argc, char **argv)
 	erofs_blk_t nblocks;
 	struct timeval t;
 	char uuid_str[37] = "not available";
+	FILE *packedfile = NULL;
 
 	erofs_init_configure();
 	erofs_mkfs_default_options();
@@ -767,11 +782,19 @@ int main(int argc, char **argv)
 	}
 #endif
 	erofs_show_config();
-	if (cfg.c_fragments) {
+	if (cfg.c_fragments || cfg.c_extra_ea_name_prefixes) {
 		if (!cfg.c_pclusterblks_packed)
 			cfg.c_pclusterblks_packed = cfg.c_pclusterblks_def;
 
-		err = erofs_fragments_init();
+		packedfile = erofs_packedfile_init();
+		if (IS_ERR(packedfile)) {
+			erofs_err("failed to initialize packedfile");
+			return 1;
+		}
+	}
+
+	if (cfg.c_fragments) {
+		err = z_erofs_fragments_init();
 		if (err) {
 			erofs_err("failed to initialize fragments");
 			return 1;
@@ -866,6 +889,9 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
+	if (cfg.c_extra_ea_name_prefixes)
+		erofs_xattr_write_name_prefixes(packedfile);
+
 	root_nid = erofs_lookupnid(root_inode);
 	erofs_iput(root_inode);
 
@@ -877,9 +903,10 @@ int main(int argc, char **argv)
 	}
 
 	packed_nid = 0;
-	if (cfg.c_fragments && erofs_sb_has_fragments()) {
+	if ((cfg.c_fragments || cfg.c_extra_ea_name_prefixes) &&
+	    erofs_sb_has_fragments()) {
 		erofs_update_progressinfo("Handling packed_file ...");
-		packed_inode = erofs_mkfs_build_fragments();
+		packed_inode = erofs_mkfs_build_packedfile();
 		if (IS_ERR(packed_inode)) {
 			err = PTR_ERR(packed_inode);
 			goto exit;
@@ -913,7 +940,9 @@ exit:
 	if (cfg.c_chunkbits)
 		erofs_blob_exit();
 	if (cfg.c_fragments)
-		erofs_fragments_exit();
+		z_erofs_fragments_exit();
+	erofs_packedfile_exit();
+	erofs_xattr_cleanup_name_prefixes();
 	erofs_exit_configure();
 
 	if (err) {

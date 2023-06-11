@@ -131,6 +131,11 @@ static int erofsfsck_parse_options_cfg(int argc, char **argv)
 				while (len > 1 && optarg[len - 1] == '/')
 					len--;
 
+				if (len >= PATH_MAX) {
+					erofs_err("target directory name too long!");
+					return -ENAMETOOLONG;
+				}
+
 				fsckcfg.extract_path = malloc(PATH_MAX);
 				if (!fsckcfg.extract_path)
 					return -ENOMEM;
@@ -258,10 +263,11 @@ static void erofsfsck_set_attributes(struct erofs_inode *inode, char *path)
 
 static int erofs_check_sb_chksum(void)
 {
-	int ret;
+#ifndef FUZZING
 	u8 buf[EROFS_MAX_BLOCK_SIZE];
 	u32 crc;
 	struct erofs_super_block *sb;
+	int ret;
 
 	ret = blk_read(0, buf, 0, 1);
 	if (ret) {
@@ -280,6 +286,7 @@ static int erofs_check_sb_chksum(void)
 		fsckcfg.corrupted = true;
 		return -1;
 	}
+#endif
 	return 0;
 }
 
@@ -382,8 +389,8 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	case EROFS_INODE_CHUNK_BASED:
 		compressed = false;
 		break;
-	case EROFS_INODE_FLAT_COMPRESSION_LEGACY:
-	case EROFS_INODE_FLAT_COMPRESSION:
+	case EROFS_INODE_COMPRESSED_FULL:
+	case EROFS_INODE_COMPRESSED_COMPACT:
 		compressed = true;
 		break;
 	default:
@@ -392,6 +399,8 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 	}
 
 	while (pos < inode->i_size) {
+		unsigned int alloc_rawsize;
+
 		map.m_la = pos;
 		if (compressed)
 			ret = z_erofs_map_blocks_iter(inode, &map,
@@ -420,10 +429,28 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 		if (!(map.m_flags & EROFS_MAP_MAPPED) || !fsckcfg.check_decomp)
 			continue;
 
-		if (map.m_plen > raw_size) {
-			raw_size = map.m_plen;
-			raw = realloc(raw, raw_size);
-			BUG_ON(!raw);
+		if (map.m_plen > Z_EROFS_PCLUSTER_MAX_SIZE) {
+			if (compressed) {
+				erofs_err("invalid pcluster size %" PRIu64 " @ offset %" PRIu64 " of nid %" PRIu64,
+					  map.m_plen, map.m_la,
+					  inode->nid | 0ULL);
+				ret = -EFSCORRUPTED;
+				goto out;
+			}
+			alloc_rawsize = Z_EROFS_PCLUSTER_MAX_SIZE;
+		} else {
+			alloc_rawsize = map.m_plen;
+		}
+
+		if (alloc_rawsize > raw_size) {
+			char *newraw = realloc(raw, alloc_rawsize);
+
+			if (!newraw) {
+				ret = -ENOMEM;
+				goto out;
+			}
+			raw = newraw;
+			raw_size = alloc_rawsize;
 		}
 
 		if (compressed) {
@@ -434,18 +461,27 @@ static int erofs_verify_inode_data(struct erofs_inode *inode, int outfd)
 			}
 			ret = z_erofs_read_one_data(inode, &map, raw, buffer,
 						    0, map.m_llen, false);
-		} else {
-			ret = erofs_read_one_data(&map, raw, 0, map.m_plen);
-		}
-		if (ret)
-			goto out;
+			if (ret)
+				goto out;
 
-		if (outfd >= 0 && write(outfd, compressed ? buffer : raw,
-					map.m_llen) < 0) {
-			erofs_err("I/O error occurred when verifying data chunk @ nid %llu",
-				  inode->nid | 0ULL);
-			ret = -EIO;
-			goto out;
+			if (outfd >= 0 && write(outfd, buffer, map.m_llen) < 0)
+				goto fail_eio;
+		} else {
+			u64 p = 0;
+
+			do {
+				u64 count = min_t(u64, alloc_rawsize,
+						  map.m_llen);
+
+				ret = erofs_read_one_data(&map, raw, p, count);
+				if (ret)
+					goto out;
+
+				if (outfd >= 0 && write(outfd, raw, count) < 0)
+					goto fail_eio;
+				map.m_llen -= count;
+				p += count;
+			} while (map.m_llen);
 		}
 	}
 
@@ -460,6 +496,12 @@ out:
 	if (buffer)
 		free(buffer);
 	return ret < 0 ? ret : 0;
+
+fail_eio:
+	erofs_err("I/O error occurred when verifying data chunk @ nid %llu",
+		  inode->nid | 0ULL);
+	ret = -EIO;
+	goto out;
 }
 
 static inline int erofs_extract_dir(struct erofs_inode *inode)
@@ -645,28 +687,35 @@ again:
 static int erofsfsck_dirent_iter(struct erofs_dir_context *ctx)
 {
 	int ret;
-	size_t prev_pos = fsckcfg.extract_pos;
+	size_t prev_pos, curr_pos;
 
 	if (ctx->dot_dotdot)
 		return 0;
 
-	if (fsckcfg.extract_path) {
-		size_t curr_pos = prev_pos;
+	prev_pos = fsckcfg.extract_pos;
+	curr_pos = prev_pos;
 
+	if (prev_pos + ctx->de_namelen >= PATH_MAX) {
+		erofs_err("unable to fsck since the path is too long (%u)",
+			  curr_pos + ctx->de_namelen);
+		return -EOPNOTSUPP;
+	}
+
+	if (fsckcfg.extract_path) {
 		fsckcfg.extract_path[curr_pos++] = '/';
 		strncpy(fsckcfg.extract_path + curr_pos, ctx->dname,
 			ctx->de_namelen);
 		curr_pos += ctx->de_namelen;
 		fsckcfg.extract_path[curr_pos] = '\0';
-		fsckcfg.extract_pos = curr_pos;
+	} else {
+		curr_pos += ctx->de_namelen;
 	}
-
+	fsckcfg.extract_pos = curr_pos;
 	ret = erofsfsck_check_inode(ctx->dir->nid, ctx->de_nid);
 
-	if (fsckcfg.extract_path) {
+	if (fsckcfg.extract_path)
 		fsckcfg.extract_path[prev_pos] = '\0';
-		fsckcfg.extract_pos = prev_pos;
-	}
+	fsckcfg.extract_pos = prev_pos;
 	return ret;
 }
 
@@ -745,7 +794,11 @@ out:
 	return ret;
 }
 
-int main(int argc, char **argv)
+#ifdef FUZZING
+int erofsfsck_fuzz_one(int argc, char *argv[])
+#else
+int main(int argc, char *argv[])
+#endif
 {
 	int err;
 
@@ -772,6 +825,10 @@ int main(int argc, char **argv)
 		goto exit;
 	}
 
+#ifdef FUZZING
+	cfg.c_dbg_lvl = -1;
+#endif
+
 	err = dev_open_ro(cfg.c_img_path);
 	if (err) {
 		erofs_err("failed to open image file");
@@ -789,7 +846,7 @@ int main(int argc, char **argv)
 		goto exit_put_super;
 	}
 
-	if (erofs_sb_has_fragments()) {
+	if (erofs_sb_has_fragments() && sbi.packed_nid > 0) {
 		err = erofsfsck_check_inode(sbi.packed_nid, sbi.packed_nid);
 		if (err) {
 			erofs_err("failed to verify packed file");
@@ -828,3 +885,28 @@ exit:
 	erofs_exit_configure();
 	return err ? 1 : 0;
 }
+
+#ifdef FUZZING
+int LLVMFuzzerTestOneInput(const uint8_t *Data, size_t Size)
+{
+	int fd, ret;
+	char filename[] = "/tmp/erofsfsck_libfuzzer_XXXXXX";
+	char *argv[] = {
+		"fsck.erofs",
+		"--extract",
+		filename,
+	};
+
+	fd = mkstemp(filename);
+	if (fd < 0)
+		return -errno;
+	if (write(fd, Data, Size) != Size) {
+		close(fd);
+		return -EIO;
+	}
+	close(fd);
+	ret = erofsfsck_fuzz_one(ARRAY_SIZE(argv), argv);
+	unlink(filename);
+	return ret ? -1 : 0;
+}
+#endif
