@@ -27,12 +27,6 @@ typedef unsigned short umode_t;
 #define PATH_MAX        4096    /* # chars in a path name including nul */
 #endif
 
-#ifdef __CYGWIN__
-#ifdef PAGE_SIZE
-#undef PAGE_SIZE
-#endif
-#endif
-
 #ifndef PAGE_SHIFT
 #define PAGE_SHIFT		(12)
 #endif
