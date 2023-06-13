@@ -43,6 +43,7 @@ endif
 # Add cygwin remove unsupport flags
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
+EROFS_DEF_DEFINES += -Wno-address-of-temporary
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
 LDFLAGS += -liconv
 endif
