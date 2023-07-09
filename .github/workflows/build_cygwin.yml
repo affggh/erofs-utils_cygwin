@@ -50,7 +50,7 @@ jobs:
         run: |
           cd erofs
           # build
-          make -j$(nproc --all)
+          make
           # output
           ls -lh bin
           # strip them to reduce size
