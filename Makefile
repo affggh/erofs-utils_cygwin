@@ -16,6 +16,16 @@ else
 ext = 
 endif
 
+ifeq ($(shell uname -m | tr -d "\n"), x86_64)
+arch = x64
+else
+ifeq ($(shell uname -m | tr -d "\n"), i686)
+arch = x86
+else
+arch = unknow
+endif
+endif
+
 EROFS_DEF_DEFINES = \
     -Wall \
     -Werror \
@@ -44,6 +54,11 @@ endif
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 EROFS_DEF_REMOVE = -DHAVE_LINUX_TYPES_H -DHAVE_FALLOCATE
 EROFS_DEF_DEFINES += -Wno-address-of-temporary
+ifeq ($(shell uname -o | tr -d "\n"), Cygwin)
+ifeq ($(shell [ -d "winfsp" ] && echo "true"), true)
+EROFS_DEF_DEFINES += -DCYGFUSE -Wno-missing-braces
+endif
+endif
 override EROFS_DEF_DEFINES := $(filter-out $(EROFS_DEF_REMOVE),$(EROFS_DEF_DEFINES))
 LDFLAGS += -liconv
 endif
@@ -72,6 +87,12 @@ INCLUDES = \
     -I./libcutils/include \
     -I./extract/extract/include
 
+ifeq ($(shell uname -o | tr -d "\n"), Cygwin)
+ifeq ($(shell [ -d "winfsp" ] && echo "true"), true)
+INCLUDES += -I./winfsp/$(arch)/usr/include/fuse
+endif
+endif
+
 liberofs_src = $(shell find lib -name \*.c)
 liberofs_obj = $(patsubst %.c,obj/%.o,$(liberofs_src))
 
@@ -83,6 +104,9 @@ fsck_obj = $(patsubst %.c,obj/%.o,$(fsck_src))
 
 dump_src = $(shell find dump -name \*.c)
 dump_obj = $(patsubst %.c,obj/%.o,$(dump_src))
+
+fuse_src = $(shell find fuse -name \*.c)
+fuse_obj = $(patsubst %.c,obj/%.o,$(fuse_src))
 
 # Addon extract.erofs
 ifeq ($(shell [ -d "extract" ] && echo "true"), true)
@@ -109,10 +133,23 @@ all_bin_prefix = \
 ifeq ($(shell [ -d "extract" ] && echo "true"), true)
 all_bin_prefix += extract
 endif
+
+ifeq ($(shell uname -o | tr -d "\n"), Cygwin)
+
+ifeq ($(shell [ -d "winfsp" ] && echo "true"), true)
+all_bin_prefix += fuse
+endif
+
 all_bin = $(patsubst %,bin/%.erofs$(ext),$(all_bin_prefix))
 ifeq ($(shell uname -s | cut -d "-" -f 1), CYGWIN_NT)
 all_bin += bin/cygwin1.dll
 endif
+ifeq ($(shell [ -d "winfsp" ] && echo "true"), true)
+all_bin+= bin/cygfuse-2.8.dll
+endif
+
+endif
+
 strip_bin = $(filter-out %.dll,$(all_bin))
 
 .PHONY: all
@@ -212,6 +249,18 @@ bin/extract.erofs$(ext): $(extract_obj) $(all_lib)
 	@mkdir -p `dirname $@`
 	@echo -e "\tLD\t    $@"
 	@$(LD) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+
+# No nesseary to build fuse but cygwin provide cygfuse we can still use this
+bin/fuse.erofs$(ext): $(fuse_obj) $(all_lib)
+	@mkdir -p `dirname $@`
+	@echo -e "\tLD\t    $@"
+	@$(LD) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) winfsp/$(arch)/usr/lib/libfuse-2.8.dll.a
+
+# cygfuse-2.8.dll is for fuse.erofs
+bin/cygfuse-2.8.dll:
+	@mkdir -p `dirname $@`
+	@echo -e "\tCOPY    \t$@"
+	@$(CP) winfsp/$(arch)/usr/$@ $@
 
 # cygwin1.dll is needed
 bin/cygwin1.dll:
