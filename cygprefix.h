@@ -4,12 +4,12 @@
 // Prefix some issues
 #include <stdlib.h>
 
-// When i update cygwin, i meet these errors... these from stdlib.h
+// When i update cygwin, i meet these errors... func below from stdlib.h
 #ifndef __builtin_malloc
 void	*__builtin_malloc(size_t) __malloc_like __result_use_check __alloc_size(1) _NOTHROW;
 #endif
 
-#ifndef __buildin_free
+#ifndef __builtin_free
 void	__builtin_free (void *) _NOTHROW;
 #endif
 
