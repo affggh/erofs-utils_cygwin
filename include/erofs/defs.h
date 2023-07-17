@@ -28,10 +28,6 @@ extern "C"
 #include <linux/types.h>
 #endif
 
-#ifdef __CYGWIN__
-#define typeof __typeof
-#endif
-
 /*
  * container_of - cast a member of a structure out to the containing structure
  * @ptr:	the pointer to the member.

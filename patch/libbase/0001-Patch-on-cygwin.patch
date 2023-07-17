@@ -141,6 +141,7 @@ index 6428a98..99085f3 100644
   * posix version of strerror_r */
  #undef _GNU_SOURCE
 +#if defined(__CYGWIN__) || defined(__linux__)
++#undef __GNU_VISIBLE
 +#define _POSIX_C_SOURCE 200809L // use posix strerror_r
 +#endif
  #include <string.h>

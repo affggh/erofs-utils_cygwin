@@ -174,7 +174,7 @@ obj/%.o: %.c
 obj/%.o: %.cpp
 	@mkdir -p `dirname $@`
 	@echo -e "\t    CC\t    $@"
-	@$(CXX) $(CXXFLAGS) $(INCLUDES) -c $< -o $@
+	@$(CXX) $(CXXFLAGS) $(INCLUDES) -include"cygprefix.h" -c $< -o $@
 
 erofs-utils-version.h:
 	@echo -e "\tGEN    \t$@"
