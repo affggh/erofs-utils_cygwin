@@ -38,3 +38,11 @@ cd erofs
 make
 ```
 the output will be saved in bin folder
+
+#### ***about fuse.erofs***
+you must install [winfsp](https://github.com/winfsp/winfsp) on you windows.    
+only support x86_64    
+```batch
+.\fuse.erofs -f .\vendor.img .\vendor 
+```
+now you can see a folder in current dir called vendor.    
