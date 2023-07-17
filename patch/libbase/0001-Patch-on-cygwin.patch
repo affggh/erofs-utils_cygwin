@@ -1,30 +1,9 @@
-From 52aced66257e5acd4e7fc83984685cc07d1ff45f Mon Sep 17 00:00:00 2001
+From 990c41e403e053420765fc2450692ccb6ed763f6 Mon Sep 17 00:00:00 2001
 From: affggh <879632264@qq.com>
-Date: Thu, 13 Apr 2023 12:08:37 +0800
+Date: Mon, 17 Jul 2023 22:25:53 +0800
 Subject: [PATCH] Patch on cygwin
 
----
- .clang-format        |  1 -
- Makefile             | 57 ++++++++++++++++++++++++++++++++++++++++++++
- cmsg.cpp             |  8 +++++++
- file.cpp             |  4 ++++
- posix_strerror_r.cpp |  3 +++
- threads.cpp          |  4 ++--
- 6 files changed, 74 insertions(+), 3 deletions(-)
- mode change 120000 => 100644 .clang-format
- create mode 100644 Makefile
 
-diff --git a/.clang-format b/.clang-format
-deleted file mode 120000
-index 7ab20d4..0000000
---- a/.clang-format
-+++ /dev/null
-@@ -1 +0,0 @@
--../../build/soong/scripts/system-clang-format-2
-\ No newline at end of file
-diff --git a/.clang-format b/.clang-format
-new file mode 100644
-index 0000000..e69de29
 diff --git a/Makefile b/Makefile
 new file mode 100644
 index 0000000..97f8f16
@@ -133,10 +112,10 @@ index 69ee69f..4bbea85 100644
  #include <mach-o/dyld.h>
  #endif
 diff --git a/posix_strerror_r.cpp b/posix_strerror_r.cpp
-index 6428a98..99085f3 100644
+index 6428a98..eb8f2bc 100644
 --- a/posix_strerror_r.cpp
 +++ b/posix_strerror_r.cpp
-@@ -17,6 +17,9 @@
+@@ -17,6 +17,10 @@
  /* Undefine _GNU_SOURCE so that this compilation unit can access the
   * posix version of strerror_r */
  #undef _GNU_SOURCE
