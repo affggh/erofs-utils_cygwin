@@ -21,7 +21,7 @@ jobs:
         uses: egor-tensin/setup-cygwin@v3
         with:
           platform: x64
-          packages: cmake make gcc-g++ github libiconv-devel zlib-devel clang llvm zip unzip curl sed libpcre-devel libpcre2-devel liblzma-devel gettext gettext-devel libtool automake autoconf po4a patch
+          packages: cmake make gcc-g++ github libiconv-devel zlib-devel clang llvm zip unzip curl sed libpcre-devel libpcre2-devel liblzma-devel gettext gettext-devel libtool automake autoconf po4a patch libdeflate-devel
 
       - name: Clone source code
         shell: C:\tools\cygwin\bin\bash.exe --login --norc -eo pipefail -o igncr '{0}'
