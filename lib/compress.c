@@ -49,14 +49,6 @@ struct z_erofs_vle_compress_ctx {
 
 #define Z_EROFS_LEGACY_MAP_HEADER_SIZE	Z_EROFS_FULL_INDEX_ALIGN(0)
 
-static unsigned int vle_compressmeta_capacity(erofs_off_t filesize)
-{
-	const unsigned int indexsize = BLK_ROUND_UP(filesize) *
-		sizeof(struct z_erofs_lcluster_index);
-
-	return Z_EROFS_LEGACY_MAP_HEADER_SIZE + indexsize;
-}
-
 static void z_erofs_write_indexes_final(struct z_erofs_vle_compress_ctx *ctx)
 {
 	const unsigned int type = Z_EROFS_LCLUSTER_TYPE_PLAIN;
@@ -843,7 +835,9 @@ int erofs_write_compressed_file(struct erofs_inode *inode, int fd)
 	erofs_blk_t blkaddr, compressed_blocks;
 	unsigned int legacymetasize;
 	int ret;
-	u8 *compressmeta = malloc(vle_compressmeta_capacity(inode->i_size));
+	u8 *compressmeta = malloc(BLK_ROUND_UP(inode->i_size) *
+				  sizeof(struct z_erofs_lcluster_index) +
+				  Z_EROFS_LEGACY_MAP_HEADER_SIZE);
 
 	if (!compressmeta)
 		return -ENOMEM;
@@ -1026,6 +1020,8 @@ static int erofs_get_compress_algorithm_id(const char *name)
 		return Z_EROFS_COMPRESSION_LZ4;
 	if (!strcmp(name, "lzma"))
 		return Z_EROFS_COMPRESSION_LZMA;
+	if (!strcmp(name, "deflate") || !strcmp(name, "libdeflate"))
+		return Z_EROFS_COMPRESSION_DEFLATE;
 	return -ENOTSUP;
 }
 
@@ -1080,6 +1076,28 @@ int z_erofs_build_compr_cfgs(struct erofs_buffer_head *sb_bh)
 		bh->op = &erofs_drop_directly_bhops;
 	}
 #endif
+	if (sbi.available_compr_algs & (1 << Z_EROFS_COMPRESSION_DEFLATE)) {
+		struct {
+			__le16 size;
+			struct z_erofs_deflate_cfgs z;
+		} __packed zalg = {
+			.size = cpu_to_le16(sizeof(struct z_erofs_deflate_cfgs)),
+			.z = {
+				.windowbits =
+					cpu_to_le32(ilog2(cfg.c_dict_size)),
+			}
+		};
+
+		bh = erofs_battach(bh, META, sizeof(zalg));
+		if (IS_ERR(bh)) {
+			DBG_BUGON(1);
+			return PTR_ERR(bh);
+		}
+		erofs_mapbh(bh->block);
+		ret = dev_write(&zalg, erofs_btell(bh, false),
+				sizeof(zalg));
+		bh->op = &erofs_drop_directly_bhops;
+	}
 	return ret;
 }
 
