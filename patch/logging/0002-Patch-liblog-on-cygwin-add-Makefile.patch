@@ -26,6 +26,8 @@ index 00000000..b765e3a2
 +override CXXFLAGS := $(CXXFLAGS) -stdlib=libc++ -static -D_Bool=bool
 +endif
 +
++INCLUDES = -include"../cygprefix.h"
++
 +liblog_src = \
 +    liblog/log_event_list.cpp \
 +    liblog/log_event_write.cpp \
