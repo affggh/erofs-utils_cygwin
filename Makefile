@@ -248,7 +248,7 @@ bin/dump.erofs$(ext): $(dump_obj) $(all_lib)
 bin/extract.erofs$(ext): $(extract_obj) $(all_lib)
 	@mkdir -p `dirname $@`
 	@echo -e "\tLD\t    $@"
-	@$(LD) $(CXXFLAGS) -o $@ $^ $(LDFLAGS)
+	@$(LD) $(CXXFLAGS) -o $@ $^ $(LDFLAGS) -lntdll
 
 fuse_lib_a = winfsp/$(arch)/usr/lib/libfuse-2.8.dll.a
 # No nesseary to build fuse but cygwin provide cygfuse we can still use this
