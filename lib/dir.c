@@ -9,7 +9,7 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 			    unsigned int next_nameoff, unsigned int maxsize,
 			    bool fsck)
 {
-	struct erofs_inode *dir = ctx->dir;
+	struct erofs_sb_info *sbi = ctx->dir->sbi;
 	struct erofs_dirent *de = dentry_blk;
 	const struct erofs_dirent *end = dentry_blk + next_nameoff;
 	const char *prev_name = NULL;
@@ -77,8 +77,8 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 					goto out;
 				}
 				ctx->flags |= EROFS_READDIR_DOTDOT_FOUND;
-				if (sbi.root_nid == dir->nid) {
-					ctx->pnid = sbi.root_nid;
+				if (sbi->root_nid == ctx->dir->nid) {
+					ctx->pnid = sbi->root_nid;
 					ctx->flags |= EROFS_READDIR_VALID_PNID;
 				}
 				if (fsck &&
@@ -124,6 +124,7 @@ out:
 int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 {
 	struct erofs_inode *dir = ctx->dir;
+	struct erofs_sb_info *sbi = dir->sbi;
 	int err = 0;
 	erofs_off_t pos;
 	char buf[EROFS_MAX_BLOCK_SIZE];
@@ -134,9 +135,9 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 	ctx->flags &= ~EROFS_READDIR_ALL_SPECIAL_FOUND;
 	pos = 0;
 	while (pos < dir->i_size) {
-		erofs_blk_t lblk = erofs_blknr(pos);
+		erofs_blk_t lblk = erofs_blknr(sbi, pos);
 		erofs_off_t maxsize = min_t(erofs_off_t,
-					dir->i_size - pos, erofs_blksiz());
+					dir->i_size - pos, erofs_blksiz(sbi));
 		const struct erofs_dirent *de = (const void *)buf;
 		unsigned int nameoff;
 
@@ -149,7 +150,7 @@ int erofs_iterate_dir(struct erofs_dir_context *ctx, bool fsck)
 
 		nameoff = le16_to_cpu(de->nameoff);
 		if (nameoff < sizeof(struct erofs_dirent) ||
-		    nameoff >= erofs_blksiz()) {
+		    nameoff >= erofs_blksiz(sbi)) {
 			erofs_err("invalid de[0].nameoff %u @ nid %llu, lblk %u",
 				  nameoff, dir->nid | 0ULL, lblk);
 			return -EFSCORRUPTED;
@@ -204,7 +205,10 @@ static int erofs_get_pathname_iter(struct erofs_dir_context *ctx)
 	}
 
 	if (ctx->de_ftype == EROFS_FT_DIR || ctx->de_ftype == EROFS_FT_UNKNOWN) {
-		struct erofs_inode dir = { .nid = ctx->de_nid };
+		struct erofs_inode dir = {
+			.sbi = ctx->dir->sbi,
+			.nid = ctx->de_nid
+		};
 
 		ret = erofs_read_inode_from_disk(&dir);
 		if (ret) {
@@ -213,10 +217,16 @@ static int erofs_get_pathname_iter(struct erofs_dir_context *ctx)
 		}
 
 		if (S_ISDIR(dir.i_mode)) {
-			ctx->dir = &dir;
-			pathctx->pos = pos + len + 1;
-			ret = erofs_iterate_dir(ctx, false);
-			pathctx->pos = pos;
+			struct erofs_get_pathname_context nctx = {
+				.ctx.flags = 0,
+				.ctx.dir = &dir,
+				.ctx.cb = erofs_get_pathname_iter,
+				.target_nid = pathctx->target_nid,
+				.buf = pathctx->buf,
+				.size = pathctx->size,
+				.pos = pos + len + 1,
+			};
+			ret = erofs_iterate_dir(&nctx.ctx, false);
 			if (ret == EROFS_PATHNAME_FOUND) {
 				pathctx->buf[pos++] = '/';
 				strncpy(pathctx->buf + pos, dname, len);
@@ -230,10 +240,14 @@ static int erofs_get_pathname_iter(struct erofs_dir_context *ctx)
 	return 0;
 }
 
-int erofs_get_pathname(erofs_nid_t nid, char *buf, size_t size)
+int erofs_get_pathname(struct erofs_sb_info *sbi, erofs_nid_t nid,
+		       char *buf, size_t size)
 {
 	int ret;
-	struct erofs_inode root = { .nid = sbi.root_nid };
+	struct erofs_inode root = {
+		.sbi = sbi,
+		.nid = sbi->root_nid,
+	};
 	struct erofs_get_pathname_context pathctx = {
 		.ctx.flags = 0,
 		.ctx.dir = &root,
