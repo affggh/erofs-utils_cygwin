@@ -96,7 +96,7 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 				}
 
 				ctx->flags |= EROFS_READDIR_DOT_FOUND;
-				if (fsck && ctx->de_nid != dir->nid) {
+				if (fsck && ctx->de_nid != ctx->dir->nid) {
 					errmsg = "corrupted `.' dirent";
 					goto out;
 				}
@@ -116,7 +116,7 @@ static int traverse_dirents(struct erofs_dir_context *ctx,
 out:
 	if (ret && !silent)
 		erofs_err("%s @ nid %llu, lblk %u, index %lu",
-			  errmsg, dir->nid | 0ULL, lblk,
+			  errmsg, ctx->dir->nid | 0ULL, lblk,
 			  (de - (struct erofs_dirent *)dentry_blk) | 0UL);
 	return ret;
 }
