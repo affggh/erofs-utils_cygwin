@@ -132,7 +132,9 @@ static void usage(void)
 }
 
 static unsigned int pclustersize_packed, pclustersize_max;
-static struct erofs_tarfile erofstar;
+static struct erofs_tarfile erofstar = {
+	.global.xattrs = LIST_HEAD_INIT(erofstar.global.xattrs)
+};
 static bool tar_mode;
 
 static int parse_extended_opts(const char *opts)
@@ -145,6 +147,7 @@ static int parse_extended_opts(const char *opts)
 
 	value = NULL;
 	for (token = opts; *token != '\0'; token = next) {
+		bool clear = false;
 		const char *p = strchr(token, ',');
 
 		next = NULL;
@@ -166,6 +169,14 @@ static int parse_extended_opts(const char *opts)
 		} else {
 			keylen = p - token;
 			vallen = 0;
+		}
+
+		if (token[0] == '^') {
+			if (keylen < 2)
+				return -EINVAL;
+			++token;
+			--keylen;
+			clear = true;
 		}
 
 		if (MATCH_EXTENTED_OPT("legacy-compress", token, keylen)) {
@@ -244,6 +255,12 @@ handle_fragment:
 			if (vallen)
 				return -EINVAL;
 			cfg.c_dedupe = true;
+		}
+
+		if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_xattr_name_filter = !clear;
 		}
 	}
 	return 0;
@@ -550,11 +567,12 @@ static int mkfs_parse_options_cfg(int argc, char *argv[])
 		cfg.c_dbg_lvl = EROFS_ERR;
 		cfg.c_showprogress = false;
 	}
-	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != EROFS_MAX_BLOCK_SIZE) {
-		erofs_err("compression is unsupported for now with block size %u",
-			  erofs_blksiz(&sbi));
-		return -EINVAL;
-	}
+
+	if (cfg.c_compr_alg[0] && erofs_blksiz(&sbi) != getpagesize())
+		erofs_warn("Please note that subpage blocksize with compression isn't yet supported in kernel. "
+			   "This compressed image will only work with bs = ps = %u bytes",
+			   erofs_blksiz(&sbi));
+
 	if (pclustersize_max) {
 		if (pclustersize_max < erofs_blksiz(&sbi) ||
 		    pclustersize_max % erofs_blksiz(&sbi)) {
@@ -688,7 +706,8 @@ static void erofs_mkfs_default_options(void)
 {
 	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
-	sbi.blkszbits = ilog2(EROFS_MAX_BLOCK_SIZE);
+	cfg.c_xattr_name_filter = true;
+	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
 	sbi.feature_compat = EROFS_FEATURE_COMPAT_SB_CHKSUM |
 			     EROFS_FEATURE_COMPAT_MTIME;
@@ -824,10 +843,7 @@ int main(int argc, char **argv)
 			erofs_err("failed to initialize fragments");
 			return 1;
 		}
-		erofs_warn("EXPERIMENTAL compressed fragments feature in use. Use at your own risk!");
 	}
-	if (cfg.c_dedupe)
-		erofs_warn("EXPERIMENTAL data deduplication feature in use. Use at your own risk!");
 
 #ifndef NDEBUG
 	if (cfg.c_random_pclusterblks)
@@ -974,6 +990,12 @@ int main(int argc, char **argv)
 		}
 		packed_nid = erofs_lookupnid(packed_inode);
 		erofs_iput(packed_inode);
+	}
+
+	/* flush all buffers except for the superblock */
+	if (!erofs_bflush(NULL)) {
+		err = -EIO;
+		goto exit;
 	}
 
 	err = erofs_mkfs_update_super_block(sb_bh, root_nid, &nblocks,

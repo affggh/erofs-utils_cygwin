@@ -574,8 +574,8 @@ static bool erofs_bh_flush_write_inode(struct erofs_buffer_head *bh)
 	off += inode->inode_isize;
 
 	if (inode->xattr_isize) {
-		char *xattrs = erofs_export_xattr_ibody(&inode->i_xattrs,
-							inode->xattr_isize);
+		char *xattrs = erofs_export_xattr_ibody(inode);
+
 		if (IS_ERR(xattrs))
 			return false;
 
@@ -1228,10 +1228,11 @@ struct erofs_inode *erofs_mkfs_build_tree_from_path(const char *path)
 	LIST_HEAD(dirs);
 	struct erofs_inode *inode, *root, *parent;
 
-	root = erofs_igrab(erofs_iget_from_path(path, true));
+	root = erofs_iget_from_path(path, true);
 	if (IS_ERR(root))
 		return root;
 
+	(void)erofs_igrab(root);
 	root->i_parent = root;	/* rootdir mark */
 	root->subdirs_queued = 1;
 	list_add(&root->i_subdirs, &dirs);
