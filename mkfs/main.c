@@ -184,57 +184,43 @@ static int parse_extended_opts(const char *opts)
 				return -EINVAL;
 			/* disable compacted indexes and 0padding */
 			cfg.c_legacy_compress = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-inode-compact", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_COMPACT;
 			cfg.c_ignore_mtime = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-inode-extended", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_inodeversion = FORCE_INODE_EXTENDED;
-		}
-
-		if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("nosbcrc", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			erofs_sb_clear_sb_chksum(&sbi);
-		}
-
-		if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("noinline_data", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_noinline_data = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
+			cfg.c_inline_data = false;
+		} else if (MATCH_EXTENTED_OPT("inline_data", token, keylen)) {
+			if (vallen)
+				return -EINVAL;
+			cfg.c_inline_data = !clear;
+		} else if (MATCH_EXTENTED_OPT("force-inode-blockmap", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_chunkformat = FORCE_INODE_BLOCK_MAP;
-		}
-
-		if (MATCH_EXTENTED_OPT("force-chunk-indexes", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("force-chunk-indexes", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_force_chunkformat = FORCE_INODE_CHUNK_INDEXES;
-		}
-
-		if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("ztailpacking", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_ztailpacking = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
+			cfg.c_ztailpacking = !clear;
+		} else if (MATCH_EXTENTED_OPT("all-fragments", token, keylen)) {
 			cfg.c_all_fragments = true;
 			goto handle_fragment;
-		}
-
-		if (MATCH_EXTENTED_OPT("fragments", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("fragments", token, keylen)) {
 			char *endptr;
 			u64 i;
 
@@ -249,18 +235,18 @@ handle_fragment:
 				}
 				pclustersize_packed = i;
 			}
-		}
-
-		if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
+		} else if (MATCH_EXTENTED_OPT("dedupe", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
-			cfg.c_dedupe = true;
-		}
-
-		if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
+			cfg.c_dedupe = !clear;
+		} else if (MATCH_EXTENTED_OPT("xattr-name-filter", token, keylen)) {
 			if (vallen)
 				return -EINVAL;
 			cfg.c_xattr_name_filter = !clear;
+		} else {
+			erofs_err("unknown extended option %.*s",
+				  p - token, token);
+			return -EINVAL;
 		}
 	}
 	return 0;
@@ -706,6 +692,7 @@ static void erofs_mkfs_default_options(void)
 {
 	cfg.c_showprogress = true;
 	cfg.c_legacy_compress = false;
+	cfg.c_inline_data = true;
 	cfg.c_xattr_name_filter = true;
 	sbi.blkszbits = ilog2(min_t(u32, getpagesize(), EROFS_MAX_BLOCK_SIZE));
 	sbi.feature_incompat = EROFS_FEATURE_INCOMPAT_ZERO_PADDING;
@@ -749,6 +736,25 @@ void erofs_show_progs(int argc, char *argv[])
 		printf("%s %s\n", basename(argv[0]), cfg.c_version);
 }
 
+static void erofs_mkfs_showsummaries(erofs_blk_t nblocks)
+{
+	char uuid_str[37] = {};
+
+	if (!(cfg.c_dbg_lvl > EROFS_ERR && cfg.c_showprogress))
+		return;
+
+	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
+
+	fprintf(stdout, "------\nFilesystem UUID: %s\n"
+		"Filesystem total blocks: %u (of %u-byte blocks)\n"
+		"Filesystem total inodes: %llu\n"
+		"Filesystem total metadata blocks: %u\n"
+		"Filesystem total deduplicated bytes (of source files): %llu\n",
+		uuid_str, nblocks, 1U << sbi.blkszbits, sbi.inos | 0ULL,
+		erofs_total_metablocks(),
+		sbi.saved_by_deduplication | 0ULL);
+}
+
 int main(int argc, char **argv)
 {
 	int err = 0;
@@ -758,7 +764,6 @@ int main(int argc, char **argv)
 	struct stat st;
 	erofs_blk_t nblocks;
 	struct timeval t;
-	char uuid_str[37];
 	FILE *packedfile = NULL;
 
 	erofs_init_configure();
@@ -923,8 +928,6 @@ int main(int argc, char **argv)
 			  erofs_strerror(err));
 		goto exit;
 	}
-	erofs_uuid_unparse_lower(sbi.uuid, uuid_str);
-	erofs_info("filesystem UUID: %s", uuid_str);
 
 	erofs_inode_manager_init();
 
@@ -970,7 +973,6 @@ int main(int argc, char **argv)
 	erofs_iput(root_inode);
 
 	if (erofstar.index_mode || cfg.c_chunkbits) {
-		erofs_info("total metadata: %u blocks", erofs_mapbh(NULL));
 		if (erofstar.index_mode && !erofstar.mapfile)
 			sbi.devs[0].blocks =
 				BLK_ROUND_UP(&sbi, erofstar.offset);
@@ -1030,8 +1032,8 @@ exit:
 		erofs_err("\tCould not format the device : %s\n",
 			  erofs_strerror(err));
 		return 1;
-	} else {
-		erofs_update_progressinfo("Build completed.\n");
 	}
+	erofs_update_progressinfo("Build completed.\n");
+	erofs_mkfs_showsummaries(nblocks);
 	return 0;
 }

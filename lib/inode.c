@@ -651,7 +651,7 @@ static int erofs_prepare_inode_buffer(struct erofs_inode *inode)
 		goto noinline;
 
 	if (!is_inode_layout_compression(inode)) {
-		if (cfg.c_noinline_data && S_ISREG(inode->i_mode)) {
+		if (!cfg.c_inline_data && S_ISREG(inode->i_mode)) {
 			inode->datalayout = EROFS_INODE_FLAT_PLAIN;
 			goto noinline;
 		}
@@ -1336,6 +1336,9 @@ int tarerofs_dump_tree(struct erofs_inode *dir)
 	} else {
 		dir->inode_isize = sizeof(struct erofs_inode_compact);
 	}
+
+	if (dir->whiteouts)
+		erofs_set_origin_xattr(dir);
 
 	ret = erofs_prepare_xattr_ibody(dir);
 	if (ret < 0)

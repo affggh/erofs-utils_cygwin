@@ -21,6 +21,55 @@
 #include "erofs/xxhash.h"
 #include "liberofs_private.h"
 
+#ifndef XATTR_SYSTEM_PREFIX
+#define XATTR_SYSTEM_PREFIX	"system."
+#endif
+#ifndef XATTR_SYSTEM_PREFIX_LEN
+#define XATTR_SYSTEM_PREFIX_LEN (sizeof(XATTR_SYSTEM_PREFIX) - 1)
+#endif
+#ifndef XATTR_USER_PREFIX
+#define XATTR_USER_PREFIX	"user."
+#endif
+#ifndef XATTR_USER_PREFIX_LEN
+#define XATTR_USER_PREFIX_LEN (sizeof(XATTR_USER_PREFIX) - 1)
+#endif
+#ifndef XATTR_SECURITY_PREFIX
+#define XATTR_SECURITY_PREFIX	"security."
+#endif
+#ifndef XATTR_SECURITY_PREFIX_LEN
+#define XATTR_SECURITY_PREFIX_LEN (sizeof(XATTR_SECURITY_PREFIX) - 1)
+#endif
+#ifndef XATTR_TRUSTED_PREFIX
+#define XATTR_TRUSTED_PREFIX	"trusted."
+#endif
+#ifndef XATTR_TRUSTED_PREFIX_LEN
+#define XATTR_TRUSTED_PREFIX_LEN (sizeof(XATTR_TRUSTED_PREFIX) - 1)
+#endif
+#ifndef XATTR_NAME_POSIX_ACL_ACCESS
+#define XATTR_NAME_POSIX_ACL_ACCESS "system.posix_acl_access"
+#endif
+#ifndef XATTR_NAME_POSIX_ACL_DEFAULT
+#define XATTR_NAME_POSIX_ACL_DEFAULT "system.posix_acl_default"
+#endif
+#ifndef OVL_XATTR_NAMESPACE
+#define OVL_XATTR_NAMESPACE "overlay."
+#endif
+#ifndef OVL_XATTR_OPAQUE_POSTFIX
+#define OVL_XATTR_OPAQUE_POSTFIX "opaque"
+#endif
+#ifndef OVL_XATTR_ORIGIN_POSTFIX
+#define OVL_XATTR_ORIGIN_POSTFIX "origin"
+#endif
+#ifndef OVL_XATTR_TRUSTED_PREFIX
+#define OVL_XATTR_TRUSTED_PREFIX XATTR_TRUSTED_PREFIX OVL_XATTR_NAMESPACE
+#endif
+#ifndef OVL_XATTR_OPAQUE
+#define OVL_XATTR_OPAQUE OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_OPAQUE_POSTFIX
+#endif
+#ifndef OVL_XATTR_ORIGIN
+#define OVL_XATTR_ORIGIN OVL_XATTR_TRUSTED_PREFIX OVL_XATTR_ORIGIN_POSTFIX
+#endif
+
 #define EA_HASHTABLE_BITS 16
 
 struct xattr_item {
@@ -437,10 +486,19 @@ int erofs_setxattr(struct erofs_inode *inode, char *key,
 	item = get_xattritem(prefix, kvbuf, len);
 	if (IS_ERR(item))
 		return PTR_ERR(item);
-	if (!item)
-		return 0;
+	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
+}
+
+int erofs_set_opaque_xattr(struct erofs_inode *inode)
+{
+	return erofs_setxattr(inode, OVL_XATTR_OPAQUE, "y", 1);
+}
+
+int erofs_set_origin_xattr(struct erofs_inode *inode)
+{
+	return erofs_setxattr(inode, OVL_XATTR_ORIGIN, NULL, 0);
 }
 
 #ifdef WITH_ANDROID
@@ -473,8 +531,7 @@ static int erofs_droid_xattr_set_caps(struct erofs_inode *inode)
 	item = get_xattritem(EROFS_XATTR_INDEX_SECURITY, kvbuf, len);
 	if (IS_ERR(item))
 		return PTR_ERR(item);
-	if (!item)
-		return 0;
+	DBG_BUGON(!item);
 
 	return erofs_xattr_add(&inode->i_xattrs, item);
 }
@@ -507,8 +564,10 @@ int erofs_prepare_xattr_ibody(struct erofs_inode *inode)
 	struct inode_xattr_node *node;
 	struct list_head *ixattrs = &inode->i_xattrs;
 
-	if (list_empty(ixattrs))
+	if (list_empty(ixattrs)) {
+		inode->xattr_isize = 0;
 		return 0;
+	}
 
 	/* get xattr ibody size */
 	ret = sizeof(struct erofs_xattr_ibody_header);
@@ -741,11 +800,14 @@ int erofs_build_shared_xattrs_from_path(struct erofs_sb_info *sbi, const char *p
 	qsort(sorted_n, shared_xattrs_count, sizeof(n), comp_shared_xattr_item);
 
 	buf = calloc(1, shared_xattrs_size);
-	if (!buf)
+	if (!buf) {
+		free(sorted_n);
 		return -ENOMEM;
+	}
 
 	bh = erofs_balloc(XATTR, shared_xattrs_size, 0, 0);
 	if (IS_ERR(bh)) {
+		free(sorted_n);
 		free(buf);
 		return PTR_ERR(bh);
 	}
