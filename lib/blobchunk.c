@@ -38,7 +38,7 @@ struct erofs_blobchunk erofs_holechunk = {
 };
 static LIST_HEAD(unhashed_blobchunks);
 
-static struct erofs_blobchunk *erofs_get_unhashed_chunk(unsigned int device_id,
+struct erofs_blobchunk *erofs_get_unhashed_chunk(unsigned int device_id,
 		erofs_blk_t blkaddr, erofs_off_t sourceoffset)
 {
 	struct erofs_blobchunk *chunk;
@@ -91,7 +91,6 @@ static struct erofs_blobchunk *erofs_blob_getchunk(struct erofs_sb_info *sbi,
 
 	erofs_dbg("Writing chunk (%u bytes) to %u", chunksize, chunk->blkaddr);
 	ret = fwrite(buf, chunksize, 1, blobfile);
-	padding = erofs_blkoff(sbi, chunksize);
 	if (ret == 1) {
 		padding = erofs_blkoff(sbi, chunksize);
 		if (padding) {
