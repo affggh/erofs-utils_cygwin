@@ -46,3 +46,5 @@ only support x86_64
 .\fuse.erofs -f .\vendor.img .\vendor 
 ```
 now you can see a folder in current dir called vendor.    
+## Archived
+please move to [here](https://github.com/sekaiacg/erofs-utils).
